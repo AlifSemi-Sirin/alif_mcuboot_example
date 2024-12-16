@@ -336,10 +336,12 @@ int main(void)
         /* Jump to the starting point of the image */
         if (rsp.br_hdr->ih_load_addr) {
             // RAM LOAD build
+            printf("RAM image\n");
             vt = (struct arm_vector_table *)(rsp.br_hdr->ih_load_addr + rsp.br_hdr->ih_hdr_size);
         }
         else {
             // XIP from slot
+            printf("XIP image\n");
             vt = (struct arm_vector_table *)(rsp.br_image_off + rsp.br_hdr->ih_hdr_size);
         }
         

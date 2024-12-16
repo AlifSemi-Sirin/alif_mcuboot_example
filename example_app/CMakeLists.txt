@@ -15,9 +15,11 @@ project(alif-example-${ENSEMBLE_CORE}
 if(MCUBOOT_MODE STREQUAL "RAMLOAD")
 set(RAM_LOAD_ADDITION "--load-addr=0x800")
 set(LINKER_FILE "gcc_M55_HE_TCM.ld")
+message(STATUS "RAM_LOAD mode selected: Using linker file ${LINKER_FILE} and load address ${RAM_LOAD_ADDITION}")
 else()
 set(RAM_LOAD_ADDITION "")
 set(LINKER_FILE "gcc_M55_HE_MRAM.ld")
+message(STATUS "Default mode selected: Using linker file ${LINKER_FILE}")
 endif()
 
 set(TRANSPORT "uart" CACHE STRING "Transport selection")

@@ -95,7 +95,8 @@ This folder contains CMakeLists.txt for the project.
 1. OPTIONAL: Install [Go](https://go.dev/), download [mcumgr-cli](https://github.com/apache/mynewt-mcumgr-cli) and follow building instruction from associated README.md to issue update commands via mcumgr-cli.
 
 ### Building for RAM_LOAD
-To build RAM_LOAD configuration, add parameter `-DMCUBOOT_MODE=RAM_LOAD` to cmake command.
+To build RAM_LOAD configuration, add parameter `-DMCUBOOT_MODE=RAMLOAD` to cmake command.
+`cmake .. -DMCUBOOT_MODE=RAMLOAD`
 
 The RAM_LOAD configuration does not support / require image test and confirmation, the later image is always loaded. All uploads will be stored to the secondary slot preserving the initial flashed application as 'golden image' in primary slot.
 
