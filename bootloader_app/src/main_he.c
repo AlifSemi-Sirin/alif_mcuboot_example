@@ -268,6 +268,61 @@ void uninit()
     hw_uninit();
 }
 
+
+static int read_single_image_state(int id, uint8_t* test_boot, uint8_t* update_available)
+{
+    const struct flash_area* fa;
+    int err = flash_area_open(id, &fa);
+    if (err != 0) {
+        printf("flash_area_open error %d\n", err);
+        return -1;
+    }
+
+    printf("  offset:    0x%lX\n", fa->fa_off);
+    printf("  size:      0x%lX\n", fa->fa_size);
+
+    struct boot_swap_state sstate;
+
+    err = boot_read_swap_state(fa, &sstate);
+    if(err != 0) {
+        printf("boot_read_swap_state error: %d\n", err);
+        return -1;
+    }
+
+    printf("  magic:     %u\n", sstate.magic);
+    printf("  swap_type: %u\n", sstate.swap_type);
+    printf("  copy_done: %u\n", sstate.copy_done);
+    printf("  image_ok:  %u\n", sstate.image_ok);
+    printf("  image_num: %u\n", sstate.image_num);
+
+    if(sstate.swap_type == BOOT_SWAP_TYPE_TEST && sstate.image_ok == BOOT_MAGIC_UNSET && test_boot) {
+        *test_boot = 1;
+    }
+
+    struct image_header header;
+    err = boot_image_load_header(fa, &header);
+    if(!err) {
+        printf("  version:   %u.%u.%u\n", header.ih_ver.iv_major, header.ih_ver.iv_minor, header.ih_ver.iv_revision);
+        if (update_available) {
+            *update_available = 1;
+        }
+    }
+    
+    flash_area_close(fa);
+    return 0;
+}
+
+int read_image_state(int image_id, uint8_t* test_boot, uint8_t* update_available)
+{
+    printf("BOOTLOADER: PRIMARY slot:\n");
+    int err = read_single_image_state(FLASH_AREA_IMAGE_PRIMARY(image_id), test_boot, 0);
+    if (err) {
+        return err;
+    }
+    printf("BOOTLOADER: SECONDARY slot:\n");
+    return read_single_image_state(FLASH_AREA_IMAGE_SECONDARY(image_id), 0, update_available);
+}
+
 int main(void)
 {
     hw_init();
@@ -312,8 +367,38 @@ int main(void)
         while(1) __WFE();
     }
 
+    printf("Bootloader M55-HE start...\n");
+
+    static uint8_t test_boot = 0;
+    uint8_t update_available = 0;
+    read_image_state(0, &test_boot, &update_available);    
+    
+    // test - force reset bootloader pending update
+    // update_available = 0;
+
+    if(update_available) {
+        printf("BOOTLOADER: Update available, starting update...\n");
+
+        const int image_id = 0;
+        int err = boot_set_pending_multi(image_id, 0);
+        if(err) {
+            printf("set_pending error: %d\n", err);
+        }
+
+        update_available = 0;
+    }
+    else {
+        printf("BOOTLOADER: no updates\n");
+
+        // manually reset bootloader pending update
+        if(boot_set_confirmed_multi(0) != 0) {
+            printf("set_confirmed_multi error!\n");
+        }        
+    }
+
     struct arm_vector_table *vt;
     struct boot_rsp rsp;
+    
 
 #if HE_UPDATES_BOTH
     // this core is the single updater so run update for all images

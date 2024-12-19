@@ -37,11 +37,11 @@
 #endif
 
 #ifndef BOOT_SLOT_SIZE
-#define BOOT_SLOT_SIZE                      (0x10000)
+#define BOOT_SLOT_SIZE                      ((1 *1024) * 1024)
 #endif
 
 #ifndef BOOT_SCRATCH_SIZE
-#define BOOT_SCRATCH_SIZE                   (0x1000)
+#define BOOT_SCRATCH_SIZE                   ((1 *1024) * 1024)
 #endif
 
 #ifdef M55_HE

@@ -209,6 +209,8 @@ int main(void)
     int rv = boot_go_for_image_id(&rsp, 1);
 #endif // #if HE_UPDATES_BOTH
 
+    printf("Bootloader M55-HP start...\n");
+
     if (rv == 0)
     {
         /* Jump to the starting point of the image */
