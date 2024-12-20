@@ -357,14 +357,13 @@ int display_menu_and_get_choice(void) {
     printf("1. Start Image 1\n");
     printf("2. Start Image 2\n");
     printf("=========================\n");
-    printf("Enter your choice: ");
 
     // Read user input via UART
-    choice = uart_read_int(); 
-    if (choice < 1 || choice > 2) {
-        send_str("Invalid choice, please try again.\n", strlen("Invalid choice, please try again.\n"));
-    }
-
+    do{
+        printf("Enter your choice: \n");
+        choice = uart_read_int(); 
+    } while (choice < 1 || choice > 2);
+    
     return choice;
 }
 
@@ -418,46 +417,41 @@ int main(void)
     uint8_t update_available = 0;
     read_image_state(0, &test_boot, &update_available);    
 
-    // Display the menu and get the user's choice
-    int choice = display_menu_and_get_choice();    
-
-    // Handle user choice
-    switch (choice) {
-        case 1:
-            printf("Starting Image 1...\n");
-            update_available = 0;
-            break;
-        case 2:
-            printf("Starting Image 2...\n");
-            break;
-        default:
-            printf("Starting default Image 1...\n");
-            update_available = 0;
-    }
-    
     if(update_available) {
-        printf("BOOTLOADER: Update available, starting update...\n");
+        // Display the menu and get the user's choice
+        int choice = display_menu_and_get_choice();    
 
-        const int image_id = 0;
-        int err = boot_set_pending_multi(image_id, 0);
-        if(err) {
-            printf("set_pending error: %d\n", err);
+        // Handle user choice
+        switch (choice) {
+            case 1:
+                printf("Starting Image 1...\n");
+                // manually reset bootloader pending update
+                if(boot_set_confirmed_multi(0) != 0) {
+                    printf("set_confirmed_multi error!\n");
+                }        
+                break;
+
+            case 2:
+                printf("Starting Image 2...\n");
+                // set pending to image_id
+                const int image_id = 0;
+                int err = boot_set_pending_multi(image_id, 0);
+                if(err) {
+                    printf("set_pending error: %d\n", err);
+                }
+                break;
+
+            default:
+                printf("Starting default Image 1...\n");
+                // manually reset bootloader pending update
+                if(boot_set_confirmed_multi(0) != 0) {
+                    printf("set_confirmed_multi error!\n");
+                }        
         }
-
-        update_available = 0;
-    }
-    else {
-        printf("BOOTLOADER: no updates\n");
-
-        // manually reset bootloader pending update
-        if(boot_set_confirmed_multi(0) != 0) {
-            printf("set_confirmed_multi error!\n");
-        }        
     }
 
     struct arm_vector_table *vt;
     struct boot_rsp rsp;
-    
 
 #if HE_UPDATES_BOTH
     // this core is the single updater so run update for all images
