@@ -25,6 +25,8 @@
 #include CMSIS_device_header
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
 
 #include "mhu_driver.h"
 
@@ -323,6 +325,49 @@ int read_image_state(int image_id, uint8_t* test_boot, uint8_t* update_available
     return read_single_image_state(FLASH_AREA_IMAGE_SECONDARY(image_id), 0, update_available);
 }
 
+
+static int uart_read_int(void) {
+    char buffer[16]; 
+    unsigned int index = 0;
+    char ch;
+
+    // Read characters until newline ('\n')
+    while (1) {
+        receive_str(&ch, 1); // Receive one character at a time
+
+        if (ch == '\n' || ch == '\r') {
+            buffer[index] = '\0'; // Null-terminate the string
+            break;
+        }
+
+        if (isdigit(ch) && index < sizeof(buffer) - 1) {
+            buffer[index++] = ch;
+        }
+    }
+
+    return atoi(buffer);
+}
+
+
+// Function to display a menu and get user input
+int display_menu_and_get_choice(void) {
+    int choice = -1;
+
+    printf("\n==== Bootloader Menu ====\n");
+    printf("1. Start Image 1\n");
+    printf("2. Start Image 2\n");
+    printf("=========================\n");
+    printf("Enter your choice: ");
+
+    // Read user input via UART
+    choice = uart_read_int(); 
+    if (choice < 1 || choice > 2) {
+        send_str("Invalid choice, please try again.\n", strlen("Invalid choice, please try again.\n"));
+    }
+
+    return choice;
+}
+
 int main(void)
 {
     hw_init();
@@ -372,10 +417,24 @@ int main(void)
     static uint8_t test_boot = 0;
     uint8_t update_available = 0;
     read_image_state(0, &test_boot, &update_available);    
-    
-    // test - force reset bootloader pending update
-    // update_available = 0;
 
+    // Display the menu and get the user's choice
+    int choice = display_menu_and_get_choice();    
+
+    // Handle user choice
+    switch (choice) {
+        case 1:
+            printf("Starting Image 1...\n");
+            update_available = 0;
+            break;
+        case 2:
+            printf("Starting Image 2...\n");
+            break;
+        default:
+            printf("Starting default Image 1...\n");
+            update_available = 0;
+    }
+    
     if(update_available) {
         printf("BOOTLOADER: Update available, starting update...\n");
 

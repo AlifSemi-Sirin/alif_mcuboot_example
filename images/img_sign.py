@@ -8,8 +8,9 @@ IMGTOOL_PATH = os.path.join(MCUBOOT_DIR, "scripts", "imgtool.py")
 KEY_PATH = os.path.join(MCUBOOT_DIR, "root-rsa-2048.pem")
 HEADER_SIZE = 0x800  # Header size
 ALIGN = 16  # Alignment
-VERSION = "2.1.1"  # Firmware version
-SLOT_SIZE = ((1 * 1024) * 1024)  # Slot size
+
+VERSION = "1.2.2"  # Firmware version
+SLOT_SIZE = (1536 * 1024)  # Slot size
 
 def sign_binary(input_file, output_file, ram_load_addition=""):
     """
