@@ -17,6 +17,9 @@
  * @brief    Device Specific Header file for ISSI FLASH Driver.
  ******************************************************************************/
 
+// Original driver can be found from Ensemble DFP pack
+// This version uses 32KiB sectors for speed up
+
 #ifndef __IS25WX256_H__
 #define __IS25WX256_H__
 
@@ -25,8 +28,8 @@ extern "C"
 {
 #endif
 
-#define FLASH_ISSI_SECTOR_COUNT                       ((uint32_t)8192)    /* Number of sectors */
-#define FLASH_ISSI_SECTOR_SIZE                        ((uint32_t)4096)    /* Sector size: 4kB */
+#define FLASH_ISSI_SECTOR_COUNT                       ((uint32_t)1024)    /* Number of sectors */
+#define FLASH_ISSI_SECTOR_SIZE                        ((uint32_t)32768)   /* Sector size: 32kB */
 #define FLASH_ISSI_PAGE_SIZE                          ((uint32_t)256)     /* Programming page size in bytes */
 #define FLASH_ISSI_PROGRAM_UNIT                       ((uint32_t)2)       /* Smallest programmable unit in bytes */
 #define FLASH_ISSI_ERASED_VALUE                       ((uint8_t)0xFF)     /* Contents of erased memory */

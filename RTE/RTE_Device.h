@@ -1476,7 +1476,7 @@
 // <h> OSPI  (Octal Serial Peripheral Interface)
 // <e> OSPI0 (Octal Serial Peripheral Interface 0) [Driver_OSPI]
 // <i> Configuration settings for Driver_OSPI in component ::Drivers:OSPI
-#define RTE_OSPI0                               0
+#define RTE_OSPI0                               1
 #if RTE_OSPI0
 // <o> OSPI0 IRQ priority <0-255>
 // <i> Defines OSPI0 Interrupt priority
@@ -1564,7 +1564,7 @@
 
 // <e> OSPI1 (Octal Serial Peripheral Interface 1) [Driver_OSPI]
 // <i> Configuration settings for Driver_OSPI in component ::Drivers:OSPI
-#define RTE_OSPI1                               0
+#define RTE_OSPI1                               1
 #if RTE_OSPI1
 // <o> OSPI1 IRQ priority <0-255>
 // <i> Defines OSPI1 Interrupt priority
@@ -1653,7 +1653,7 @@
 //</h>
 // <e> FLASH (ISSI FLASH) [Driver_Flash]
 // <i> Configuration settings for Driver_Flash in component ::Drivers:Flash
-#define RTE_ISSI_FLASH               0
+#define RTE_ISSI_FLASH               1
 #if RTE_ISSI_FLASH
 
 // <o> ISSI FLASH OSPI Instance
@@ -1665,6 +1665,12 @@
 // <i> Defines the OSPI Bus speed
 // <i> Default: 100000000
 #define RTE_ISSI_FLASH_OSPI_BUS_SPEED           100000000
+
+// <o> ISSI FLASH Wait cycles
+// <i> Defines the number of wait (dummy) cycles needed for fast read operations
+// <i> Default: 16
+#define RTE_ISSI_FLASH_WAIT_CYCLES              16
+
 #endif
 // </e> FLASH (ISSI FLASH) [Driver_Flash]
 

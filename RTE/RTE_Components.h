@@ -24,6 +24,7 @@
 #define RTE_Drivers_GPIO        1
 #define RTE_Drivers_PINCONF     1
 #define RTE_Drivers_LPTIMER     1
-//#define RTE_Drivers_OSPI     1           /* Driver OSPI */
+#define RTE_Drivers_OSPI        1           /* Driver OSPI */
+#define RTE_Drivers_LL_PINCONF  1           /* Driver PinPAD and PinMux */
 
 #endif /* RTE_COMPONENTS_H */

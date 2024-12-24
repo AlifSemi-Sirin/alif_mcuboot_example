@@ -1,4 +1,4 @@
-/* Copyright (C) 2022 Alif Semiconductor - All Rights Reserved.
+/* Copyright (C) 2022-2024 Alif Semiconductor - All Rights Reserved.
  * Use, distribution and modification of this code is permitted under the
  * terms stated in the Alif Semiconductor Software License Agreement
  *
@@ -19,19 +19,17 @@
  * @Note     None
  ******************************************************************************/
 
+// Original driver can be found from Ensemble DFP pack
+// This version uses 32KiB sectors for speed up
 #include "Driver_Flash.h"
 #include "Driver_OSPI.h"
 #include "RTE_Device.h"
 #include "RTE_Components.h"
-#include "IS25WX256.h"
+#include "IS25WX256_mod.h"
 #include CMSIS_device_header
 
 #if !(RTE_ISSI_FLASH)
 #error "ISSI Flash driver is not enabled in RTE_Device.h"
-#endif
-
-#if !(RTE_Drivers_ISSI_FLASH)
-#error "ISSI Flash driver is not enabled in RTE_Components.h"
 #endif
 
 #define ARM_FLASH_DRV_VERSION ARM_DRIVER_VERSION_MAJOR_MINOR(1,0) /* driver version */
@@ -56,7 +54,8 @@
 #define CMD_WRITE_ENABLE                                        (0x06U)
 #define CMD_PAGE_PROGRAM                                        (0x84U)
 #define CMD_READ_FLAG_STATUS                                    (0x70U)
-#define CMD_SECTOR_ERASE                                        (0x21U)
+//#define CMD_SECTOR_ERASE                                        (0x21U)
+#define CMD_SECTOR_ERASE                                        (0x52U)
 #define CMD_BULK_ERASE                                          (0xC7U)
 
 #define IO_MODE_ADDRESS                                         0x00000000U

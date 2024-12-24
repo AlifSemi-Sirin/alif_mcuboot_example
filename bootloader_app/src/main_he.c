@@ -21,6 +21,8 @@
 #include "Driver_HWSEM.h"
 #include "services_lib_bare_metal.h"
 
+#include "Driver_Flash.h"
+#include "Driver_GPIO.h"
 #include "RTE_Components.h"
 #include CMSIS_device_header
 
@@ -75,6 +77,24 @@ static mhu_driver_in_t  mhu_driver_in = {
 static mhu_driver_out_t mhu_driver_out;
 
 static uint32_t se_services_s_handle;
+
+// static bool init_ext_flash(void);
+#define OSPI_RESET_PORT LP
+#define OSPI_RESET_PIN 7
+
+extern ARM_DRIVER_GPIO Driver_GPIOLP;
+static ARM_DRIVER_GPIO *OSPI_GPIODrv = &ARM_Driver_GPIO_(OSPI_RESET_PORT);
+
+extern ARM_DRIVER_FLASH ARM_Driver_Flash_(1);
+static ARM_DRIVER_FLASH *FlashDrv = &ARM_Driver_Flash_(1);
+
+
+#define TEST_DATA_SIZE  256
+#define TEST_ADDRESS    0x0000000
+
+uint8_t tx_buffer[TEST_DATA_SIZE];  // OSPI TX Buffer 
+uint8_t rx_buffer[TEST_DATA_SIZE];  // OSPI RX Buffer
+
 
 void MHU_RTSS_S_TX_IRQHandler(void)
 {
@@ -367,6 +387,103 @@ int display_menu_and_get_choice(void) {
     return choice;
 }
 
+
+void dump_data(const char *msg, const uint8_t *data, uint32_t len) {
+    printf("%s:\n", msg);
+    for (uint32_t i = 0; i < len; i++) {
+        printf("%02X ", data[i]);
+        if ((i + 1) % 16 == 0) printf("\n");
+    }
+    printf("\n");
+}
+void ospi_flash_test(void) {
+    int32_t status;
+
+    // Reset the flash device
+    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_LOW);
+    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_HIGH);    
+
+    status = FlashDrv->Initialize(NULL);
+    if (status != ARM_DRIVER_OK) {
+        printf("OSPI Flash: Init failed, error: %lx\n", status);
+        return;
+    }
+
+    status = FlashDrv->PowerControl(ARM_POWER_FULL);
+    if (status != ARM_DRIVER_OK) {
+        printf("Power OSPI failed, error: %lx\n", status);
+        return;
+    }
+
+    const uint32_t sector_addr = 1 * FlashDrv->GetInfo()->sector_size;
+    const uint32_t sector_size = FlashDrv->GetInfo()->sector_size;
+    const uint32_t sector_count = FlashDrv->GetInfo()->sector_count;
+    printf("OSPI Flash: Sector Size: %lu bytes, Sector Count: %lu\n", sector_size, sector_count);
+    printf("OSPI Flash: Sector Address: %lu bytes\n", sector_addr);
+    printf("\n");
+
+    status = FlashDrv->EraseSector(TEST_ADDRESS);
+    if (status != ARM_DRIVER_OK) {
+        printf("Erase error: %lx\n", status);
+        return;
+    }
+
+    ARM_FLASH_STATUS flash_status = FlashDrv->GetStatus();
+    if (flash_status.busy) {
+        printf("OSPI busy!\n");
+        return;
+    }
+
+    for (uint32_t i = 0; i < TEST_DATA_SIZE; i++) {
+        tx_buffer[i] = (uint8_t)(i & 0xFF); // Заполняем данные тестовыми значениями
+    }
+    dump_data("Данные для записи", tx_buffer, TEST_DATA_SIZE);
+
+    status = FlashDrv->ProgramData(TEST_ADDRESS, tx_buffer, TEST_DATA_SIZE);
+    if (status != TEST_DATA_SIZE) {
+        printf("Write error: %lx\n", status);
+        return;
+    }
+
+    flash_status = FlashDrv->GetStatus();
+    if (flash_status.busy) {
+        printf("OSPI busy!\n");
+        return;
+    }
+
+    memset(rx_buffer, 0, TEST_DATA_SIZE); // Очищаем буфер
+    status = FlashDrv->ReadData(TEST_ADDRESS, rx_buffer, TEST_DATA_SIZE);
+    if (status != TEST_DATA_SIZE) {
+        printf("Read error: %lx\n", status);
+        return;
+    }
+
+    dump_data("Read data mass", rx_buffer, TEST_DATA_SIZE);
+
+    // Check that the data was written correctly
+    if (memcmp(tx_buffer, rx_buffer, TEST_DATA_SIZE) == 0) {
+        printf("WR Data success.\n");
+    } else {
+        printf("WR Data failed.\n");
+    }
+
+    // // Выключаем питание
+    // printf("Выключение питания...\n");
+    // status = FlashDrv->PowerControl(ARM_POWER_OFF);
+    // if (status != ARM_DRIVER_OK) {
+    //     printf("Ошибка отключения питания OSPI! Код: %lx\n", status);
+    // }
+
+    // // Деинициализация драйвера
+    // printf("Деинициализация OSPI...\n");
+    // status = FlashDrv->Uninitialize();
+    // if (status != ARM_DRIVER_OK) {
+    //     printf("Ошибка деинициализации OSPI! Код: %lx\n", status);
+    // }
+}
+
+
+
 int main(void)
 {
     hw_init();
@@ -410,6 +527,10 @@ int main(void)
         printf("SERVICES_set_run_cfg %" PRIu32 "    %" PRIu32 "\n", er, err);
         while(1) __WFE();
     }
+
+    // OSPI controller initialization
+    printf("Init OSPI flash device\n");
+    ospi_flash_test();    
 
     printf("Bootloader M55-HE start...\n");
 

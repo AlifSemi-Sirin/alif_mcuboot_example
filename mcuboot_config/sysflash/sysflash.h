@@ -33,7 +33,7 @@
 #define IMAGE_1_START                       (0x40000)
 
 #ifndef BOOT_BOOTLOADER_SIZE
-#define BOOT_BOOTLOADER_SIZE                (0x10000)
+#define BOOT_BOOTLOADER_SIZE                (64 * 1024)
 #endif
 
 #ifndef BOOT_SLOT_SIZE
