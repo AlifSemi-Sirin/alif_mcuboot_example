@@ -94,6 +94,7 @@ static ARM_DRIVER_FLASH *FlashDrv = &ARM_Driver_Flash_(1);
 
 uint8_t tx_buffer[TEST_DATA_SIZE];  // OSPI TX Buffer 
 uint8_t rx_buffer[TEST_DATA_SIZE];  // OSPI RX Buffer
+uint8_t add_buffer[TEST_DATA_SIZE];  
 
 
 void MHU_RTSS_S_TX_IRQHandler(void)
@@ -396,8 +397,32 @@ void dump_data(const char *msg, const uint8_t *data, uint32_t len) {
     }
     printf("\n");
 }
+
+static void OSPI_Pinmux_Init()
+{
+    /* OSPI1 interface (Flash) */
+	pinconf_set(PORT_9,  PIN_5, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D0
+	pinconf_set(PORT_9,  PIN_6, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D1
+	pinconf_set(PORT_9,  PIN_7, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D2
+	pinconf_set(PORT_10, PIN_0, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D3
+	pinconf_set(PORT_10, PIN_1, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D4
+	pinconf_set(PORT_10, PIN_2, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D5
+	pinconf_set(PORT_10, PIN_3, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D6
+	pinconf_set(PORT_10, PIN_4, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D7
+	pinconf_set(PORT_5,  PIN_5, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST);    // SCLK
+	pinconf_set(PORT_8,  PIN_0, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST);    // SCLKN
+	pinconf_set(PORT_5,  PIN_7, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST);    // SS0
+	pinconf_set(PORT_10, PIN_7, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // RXDS
+	// Ensemble B1 workaround - function of P10_7 is controlled by function of P5_6. Fixed in B2
+	pinconf_set(PORT_5,  PIN_6, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // RXDS
+	pinconf_set(PORT_LP, PIN_7, PINMUX_ALTERNATE_FUNCTION_0, 0);    // RESET
+}
+
+
 void ospi_flash_test(void) {
     int32_t status;
+
+    OSPI_Pinmux_Init();
 
     // Reset the flash device
     OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_LOW);
@@ -437,8 +462,10 @@ void ospi_flash_test(void) {
     for (uint32_t i = 0; i < TEST_DATA_SIZE; i++) {
         tx_buffer[i] = (uint8_t)(i & 0xFF); // Заполняем данные тестовыми значениями
     }
-    dump_data("Данные для записи", tx_buffer, TEST_DATA_SIZE);
+    dump_data("wr data:", tx_buffer, TEST_DATA_SIZE);
 
+    // data destroyed in the TX buffer after tx finish
+    memcpy(add_buffer, tx_buffer, TEST_DATA_SIZE);
     status = FlashDrv->ProgramData(TEST_ADDRESS, tx_buffer, TEST_DATA_SIZE);
     if (status != TEST_DATA_SIZE) {
         printf("Write error: %lx\n", status);
@@ -461,25 +488,21 @@ void ospi_flash_test(void) {
     dump_data("Read data mass", rx_buffer, TEST_DATA_SIZE);
 
     // Check that the data was written correctly
-    if (memcmp(tx_buffer, rx_buffer, TEST_DATA_SIZE) == 0) {
+    if (memcmp(add_buffer, rx_buffer, TEST_DATA_SIZE) == 0) {
         printf("WR Data success.\n");
     } else {
         printf("WR Data failed.\n");
     }
 
-    // // Выключаем питание
-    // printf("Выключение питания...\n");
-    // status = FlashDrv->PowerControl(ARM_POWER_OFF);
-    // if (status != ARM_DRIVER_OK) {
-    //     printf("Ошибка отключения питания OSPI! Код: %lx\n", status);
-    // }
+    status = FlashDrv->PowerControl(ARM_POWER_OFF);
+    if (status != ARM_DRIVER_OK) {
+        printf("Power OFF OSPI error: %lx\n", status);
+    }
 
-    // // Деинициализация драйвера
-    // printf("Деинициализация OSPI...\n");
-    // status = FlashDrv->Uninitialize();
-    // if (status != ARM_DRIVER_OK) {
-    //     printf("Ошибка деинициализации OSPI! Код: %lx\n", status);
-    // }
+    status = FlashDrv->Uninitialize();
+    if (status != ARM_DRIVER_OK) {
+        printf("Deinit OSPI error: %lx\n", status);
+    }
 }
 
 
