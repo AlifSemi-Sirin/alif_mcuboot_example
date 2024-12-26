@@ -13,12 +13,15 @@
 #include <mcuboot_config/mcuboot_config.h>
 
 #define FLASH_DEVICE_MRAM                   0
+#define FLASH_DEVICE_OSPI                   1
 
 #define FLASH_SLOT_DOES_NOT_EXIST           255
 #define MRAM_SECTOR_SIZE                    1024
 #define FLASH_AREA_BOOTLOADER               0
 #define FLASH_AREA_IMAGE_0_PRIMARY          1
 #define FLASH_AREA_IMAGE_0_SECONDARY        2
+#define FLASH_AREA_IMAGE_SECONDARY_OSPI     10 
+
 #if MCUBOOT_SWAP_USING_SCRATCH
 #define FLASH_AREA_IMAGE_SCRATCH            3
 #endif
@@ -63,6 +66,9 @@
 #define FLASH_AREA_IMAGE_SECONDARY(x)  (((x) == 0) ?          \
                                          FLASH_AREA_IMAGE_0_SECONDARY : \
                                          FLASH_SLOT_DOES_NOT_EXIST)
+#define OSPI_AREA_IMAGE_SECONDARY(x)  (((x) == 0) ?          \
+                                         FLASH_AREA_IMAGE_SECONDARY_OSPI : \
+                                         FLASH_SLOT_DOES_NOT_EXIST)
 #elif MCUBOOT_IMAGE_NUMBER == 2
 #define FLASH_AREA_IMAGE_PRIMARY(x)    (((x) == 0) ?          \
                                          FLASH_AREA_IMAGE_0_PRIMARY : \
@@ -72,6 +78,10 @@
                                          FLASH_AREA_IMAGE_0_SECONDARY : \
                                          ((x) == 1) ? FLASH_AREA_IMAGE_1_SECONDARY : \
                                          FLASH_SLOT_DOES_NOT_EXIST)
+#define OSPI_AREA_IMAGE_SECONDARY(x)  (((x) == 0) ?          \
+                                         FLASH_AREA_IMAGE_SECONDARY_OSPI : \
+                                         FLASH_SLOT_DOES_NOT_EXIST)
+
 #else
 #error Unsupported number of images.
 #endif

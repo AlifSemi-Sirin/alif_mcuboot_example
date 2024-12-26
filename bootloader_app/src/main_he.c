@@ -21,7 +21,6 @@
 #include "Driver_HWSEM.h"
 #include "services_lib_bare_metal.h"
 
-#include "Driver_Flash.h"
 #include "Driver_GPIO.h"
 #include "RTE_Components.h"
 #include CMSIS_device_header
@@ -31,6 +30,12 @@
 #include <ctype.h>
 
 #include "mhu_driver.h"
+
+#define OSPI_RESET_PORT LP
+#define OSPI_RESET_PIN 7
+extern ARM_DRIVER_GPIO Driver_GPIOLP;
+static ARM_DRIVER_GPIO *OSPI_GPIODrv = &ARM_Driver_GPIO_(OSPI_RESET_PORT);
+
 
 #define SHUTDOWN_MESSAGE 0xDEADBEEF
 
@@ -77,24 +82,6 @@ static mhu_driver_in_t  mhu_driver_in = {
 static mhu_driver_out_t mhu_driver_out;
 
 static uint32_t se_services_s_handle;
-
-// static bool init_ext_flash(void);
-#define OSPI_RESET_PORT LP
-#define OSPI_RESET_PIN 7
-
-extern ARM_DRIVER_GPIO Driver_GPIOLP;
-static ARM_DRIVER_GPIO *OSPI_GPIODrv = &ARM_Driver_GPIO_(OSPI_RESET_PORT);
-
-extern ARM_DRIVER_FLASH ARM_Driver_Flash_(1);
-static ARM_DRIVER_FLASH *FlashDrv = &ARM_Driver_Flash_(1);
-
-
-#define TEST_DATA_SIZE  256
-#define TEST_ADDRESS    0x0000000
-
-uint8_t tx_buffer[TEST_DATA_SIZE];  // OSPI TX Buffer 
-uint8_t rx_buffer[TEST_DATA_SIZE];  // OSPI RX Buffer
-uint8_t add_buffer[TEST_DATA_SIZE];  
 
 
 void MHU_RTSS_S_TX_IRQHandler(void)
@@ -169,6 +156,7 @@ struct arm_vector_table {
 
 extern void clk_init(void);
 extern void flush_uart(void);
+extern int ospi_flash_init(void);
 
 
 // Overwrites the default MPU table from Alif CMSIS-dfp to make own execution area
@@ -343,7 +331,7 @@ int read_image_state(int image_id, uint8_t* test_boot, uint8_t* update_available
         return err;
     }
     printf("BOOTLOADER: SECONDARY slot:\n");
-    return read_single_image_state(FLASH_AREA_IMAGE_SECONDARY(image_id), 0, update_available);
+    return read_single_image_state(OSPI_AREA_IMAGE_SECONDARY(image_id), 0, update_available);
 }
 
 
@@ -388,122 +376,6 @@ int display_menu_and_get_choice(void) {
     return choice;
 }
 
-
-void dump_data(const char *msg, const uint8_t *data, uint32_t len) {
-    printf("%s:\n", msg);
-    for (uint32_t i = 0; i < len; i++) {
-        printf("%02X ", data[i]);
-        if ((i + 1) % 16 == 0) printf("\n");
-    }
-    printf("\n");
-}
-
-static void OSPI_Pinmux_Init()
-{
-    /* OSPI1 interface (Flash) */
-	pinconf_set(PORT_9,  PIN_5, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D0
-	pinconf_set(PORT_9,  PIN_6, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D1
-	pinconf_set(PORT_9,  PIN_7, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D2
-	pinconf_set(PORT_10, PIN_0, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D3
-	pinconf_set(PORT_10, PIN_1, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D4
-	pinconf_set(PORT_10, PIN_2, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D5
-	pinconf_set(PORT_10, PIN_3, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D6
-	pinconf_set(PORT_10, PIN_4, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // D7
-	pinconf_set(PORT_5,  PIN_5, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST);    // SCLK
-	pinconf_set(PORT_8,  PIN_0, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST);    // SCLKN
-	pinconf_set(PORT_5,  PIN_7, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST);    // SS0
-	pinconf_set(PORT_10, PIN_7, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // RXDS
-	// Ensemble B1 workaround - function of P10_7 is controlled by function of P5_6. Fixed in B2
-	pinconf_set(PORT_5,  PIN_6, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE);    // RXDS
-	pinconf_set(PORT_LP, PIN_7, PINMUX_ALTERNATE_FUNCTION_0, 0);    // RESET
-}
-
-
-void ospi_flash_test(void) {
-    int32_t status;
-
-    OSPI_Pinmux_Init();
-
-    // Reset the flash device
-    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_LOW);
-    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_HIGH);    
-
-    status = FlashDrv->Initialize(NULL);
-    if (status != ARM_DRIVER_OK) {
-        printf("OSPI Flash: Init failed, error: %lx\n", status);
-        return;
-    }
-
-    status = FlashDrv->PowerControl(ARM_POWER_FULL);
-    if (status != ARM_DRIVER_OK) {
-        printf("Power OSPI failed, error: %lx\n", status);
-        return;
-    }
-
-    const uint32_t sector_addr = 1 * FlashDrv->GetInfo()->sector_size;
-    const uint32_t sector_size = FlashDrv->GetInfo()->sector_size;
-    const uint32_t sector_count = FlashDrv->GetInfo()->sector_count;
-    printf("OSPI Flash: Sector Size: %lu bytes, Sector Count: %lu\n", sector_size, sector_count);
-    printf("OSPI Flash: Sector Address: %lu bytes\n", sector_addr);
-    printf("\n");
-
-    status = FlashDrv->EraseSector(TEST_ADDRESS);
-    if (status != ARM_DRIVER_OK) {
-        printf("Erase error: %lx\n", status);
-        return;
-    }
-
-    ARM_FLASH_STATUS flash_status = FlashDrv->GetStatus();
-    if (flash_status.busy) {
-        printf("OSPI busy!\n");
-        return;
-    }
-
-    for (uint32_t i = 0; i < TEST_DATA_SIZE; i++) {
-        tx_buffer[i] = (uint8_t)(i & 0xFF); // Заполняем данные тестовыми значениями
-    }
-    dump_data("wr data:", tx_buffer, TEST_DATA_SIZE);
-
-    // data destroyed in the TX buffer after tx finish
-    memcpy(add_buffer, tx_buffer, TEST_DATA_SIZE);
-    status = FlashDrv->ProgramData(TEST_ADDRESS, tx_buffer, TEST_DATA_SIZE);
-    if (status != TEST_DATA_SIZE) {
-        printf("Write error: %lx\n", status);
-        return;
-    }
-
-    flash_status = FlashDrv->GetStatus();
-    if (flash_status.busy) {
-        printf("OSPI busy!\n");
-        return;
-    }
-
-    memset(rx_buffer, 0, TEST_DATA_SIZE); // Очищаем буфер
-    status = FlashDrv->ReadData(TEST_ADDRESS, rx_buffer, TEST_DATA_SIZE);
-    if (status != TEST_DATA_SIZE) {
-        printf("Read error: %lx\n", status);
-        return;
-    }
-
-    dump_data("Read data mass", rx_buffer, TEST_DATA_SIZE);
-
-    // Check that the data was written correctly
-    if (memcmp(add_buffer, rx_buffer, TEST_DATA_SIZE) == 0) {
-        printf("WR Data success.\n");
-    } else {
-        printf("WR Data failed.\n");
-    }
-
-    status = FlashDrv->PowerControl(ARM_POWER_OFF);
-    if (status != ARM_DRIVER_OK) {
-        printf("Power OFF OSPI error: %lx\n", status);
-    }
-
-    status = FlashDrv->Uninitialize();
-    if (status != ARM_DRIVER_OK) {
-        printf("Deinit OSPI error: %lx\n", status);
-    }
-}
 
 
 
@@ -551,9 +423,15 @@ int main(void)
         while(1) __WFE();
     }
 
+    // Reset the OSPI flash 
+    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_LOW);
+    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_HIGH);
+
     // OSPI controller initialization
-    printf("Init OSPI flash device\n");
-    ospi_flash_test();    
+    if(ospi_flash_init() == -1) {
+        printf("OSPI flash init failed\n");
+        while(1) __WFE();
+    }
 
     printf("Bootloader M55-HE start...\n");
 
@@ -568,7 +446,7 @@ int main(void)
         // Handle user choice
         switch (choice) {
             case 1:
-                printf("Starting Image 1...\n");
+                printf("Booting Primary Image from MRAM.\n");
                 // manually reset bootloader pending update
                 if(boot_set_confirmed_multi(0) != 0) {
                     printf("set_confirmed_multi error!\n");
@@ -576,7 +454,7 @@ int main(void)
                 break;
 
             case 2:
-                printf("Starting Image 2...\n");
+                printf("Booting Secondary Image from OSPI.\n");
                 // set pending to image_id
                 const int image_id = 0;
                 int err = boot_set_pending_multi(image_id, 0);

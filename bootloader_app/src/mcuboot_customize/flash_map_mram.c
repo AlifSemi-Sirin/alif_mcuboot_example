@@ -15,10 +15,23 @@
 #include <stddef.h>
 #include <inttypes.h>
 
+#include "flash_map_mram.h"
+
+
 #define MRAM_BASE                           0x80000000
 #define MRAM_WRITE_SIZE                     16
 #define MRAM_ERASE_VALUE                    0x0
 #define MRAM_ADDR_ALIGN_MASK                0xFFFFFFF0U
+
+#define OSPI_BASE                           0x00000000
+#define OSPI_ERASE_VALUE                    0xFF
+
+// ToDo - set values
+// #define OSPI_WRITE_SIZE                     16
+// #define OSPI_ADDR_ALIGN_MASK                0xFFFFFFF0U
+
+
+OspiDriver_t OSPI_Driver;
 
 static struct flash_area bootloader =
 {
@@ -39,6 +52,7 @@ static struct flash_area primary_1 =
     .fa_size = BOOT_SLOT_SIZE
 };
 
+/*
 static struct flash_area secondary_1 =
 {
     .fa_id = FLASH_AREA_IMAGE_SECONDARY(0),
@@ -49,6 +63,18 @@ static struct flash_area secondary_1 =
                 BOOT_SLOT_SIZE,
     .fa_size = BOOT_SLOT_SIZE
 };
+*/
+
+
+static struct flash_area ospi_flash_area =
+{
+    .fa_id = OSPI_AREA_IMAGE_SECONDARY(0),
+    .fa_device_id = FLASH_DEVICE_OSPI,
+    .fa_off = OSPI_BASE +\
+                IMAGE_0_START,
+    .fa_size = BOOT_SLOT_SIZE
+};
+
 
 #ifdef MCUBOOT_SWAP_USING_SCRATCH
 static struct flash_area scratch =
@@ -87,7 +113,7 @@ struct flash_area *boot_area_descs[] =
 {
     &bootloader,
     &primary_1,
-    &secondary_1,
+    &ospi_flash_area,
 #ifdef MCUBOOT_SWAP_USING_SCRATCH
     &scratch,
 #endif
@@ -169,7 +195,6 @@ int flash_area_open(uint8_t id, const struct flash_area **area_outp)
     struct flash_area *area = get_flash_area_from_id(id);
 
     *area_outp = area;
-
     return area != NULL ? 0 : -1;
 }
 
@@ -200,6 +225,14 @@ int flash_area_read(const struct flash_area *fa, uint32_t off,
 {
     uint32_t addr = fa->fa_off + off;
 
+    if (fa->fa_device_id == FLASH_DEVICE_OSPI) { // OSPI
+        if(OSPI_Driver.ReadData == NULL) {
+            return -1;
+        }
+
+        return OSPI_Driver.ReadData(addr, dst, len);
+    }    
+
     memcpy(dst, (const void *) addr, len);
 
     return 0;
@@ -220,6 +253,14 @@ int flash_area_write(const struct flash_area *fa, uint32_t off,
 {
     uint32_t addr = fa->fa_off + off;
     const uint8_t *data = src;
+
+    if (fa->fa_device_id == FLASH_DEVICE_OSPI) { 
+        if(OSPI_Driver.WriteData == NULL) {
+            return -1;
+        }
+        
+        return OSPI_Driver.WriteData(addr, src, len);
+    }
 
     if(addr % MRAM_WRITE_SIZE) {
 
@@ -290,6 +331,15 @@ int flash_area_erase(const struct flash_area *fa,
                      uint32_t off, uint32_t len)
 {
     uint32_t addr = fa->fa_off + off;
+
+    if (fa->fa_device_id == FLASH_DEVICE_OSPI) { // OSPI
+        if(OSPI_Driver.EraseData == NULL) {
+            return -1;
+        }
+        
+        return OSPI_Driver.EraseData(addr, len);
+    }
+    
     /* buffer to act as a source of 0s for mram 'erase' */
     uint64_t src[2];
     memset(src, MRAM_ERASE_VALUE, 16);
@@ -329,8 +379,10 @@ uint32_t flash_area_align(const struct flash_area *area)
 */
 uint8_t flash_area_erased_val(const struct flash_area *area)
 {
-    (void) area;
-
+    if (area->fa_device_id == FLASH_DEVICE_OSPI) { 
+        return OSPI_ERASE_VALUE;
+    }
+        
     return MRAM_ERASE_VALUE;
 }
 
