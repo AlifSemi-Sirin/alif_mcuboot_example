@@ -43,7 +43,11 @@ target_link_libraries(${bootutil_lib_name}
 
 target_compile_options(${bootutil_lib_name}
     PRIVATE
-        -Wno-error=format
+        # -Og                # debugging
+        # -g                 # debugging
+        -fstack-protector-strong 
+        # -DDEBUG            # debugging
+        -Wno-error=format  
 )
 
 endmacro()

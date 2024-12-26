@@ -17,8 +17,5 @@
 // Function declarations
 void dump_data(const char *msg, const uint8_t *data, uint32_t len);
 int ospi_flash_init(void);
-// int32_t ospi_read_data(uint32_t addr, void *data, uint32_t cnt);
-// int32_t ospi_write_data(uint32_t addr, const void *data, uint32_t cnt);
-// int32_t ospi_erase_sector(uint32_t addr);
 
 #endif // OSPI_BOOTLOADER_INIT_H

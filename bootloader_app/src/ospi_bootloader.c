@@ -18,12 +18,22 @@
 #include CMSIS_device_header
 
 #include <stdio.h>
+#include <string.h>
 #include "pinconf.h"
 
 extern ARM_DRIVER_FLASH ARM_Driver_Flash_(1);
 static ARM_DRIVER_FLASH *FlashDrv = &ARM_Driver_Flash_(1);
 
 static ARM_FLASH_STATUS flash_status;
+
+// Static page buffer and control variables
+#define OSPI_MAX_RX_COUNT                                        256
+#define FLASH_SIZE                                             (16 * 1024 * 1024) // 16MB
+
+static uint8_t page_buffer[OSPI_MAX_RX_COUNT];   // Buffer for a single page
+static uint32_t page_start_addr = 0xFFFFFFFF; // Start address of cached page
+static uint32_t page_valid_size = 0;          // Valid data size in the page
+
 
 void dump_data(const char *msg, const uint8_t *data, uint32_t len)
 {
@@ -39,44 +49,145 @@ void dump_data(const char *msg, const uint8_t *data, uint32_t len)
 
 static int32_t ospi_drv_init(void)
 {
-    int32_t status = FlashDrv->Initialize(NULL);
-    if (status != ARM_DRIVER_OK)
+    int32_t ret = FlashDrv->Initialize(NULL);
+    if (ret != ARM_DRIVER_OK)
     {
-        printf("OSPI Flash: Init failed, error: %lx\n", status);
+        printf("OSPI Flash: Init failed, error: %lx\n", ret);
         return -1;
     }
 
-    status = FlashDrv->PowerControl(ARM_POWER_FULL);
-    if (status != ARM_DRIVER_OK)
+    ret = FlashDrv->PowerControl(ARM_POWER_FULL);
+    if (ret != ARM_DRIVER_OK)
     {
-        printf("Power OSPI failed, error: %lx\n", status);
+        printf("Power OSPI failed, error: %lx\n", ret);
         return -1;
     }
 
     return 0;
 }
 
-static int32_t ospi_read_data(uint32_t addr, void *data, uint32_t cnt)
+/**
+ * @brief Fills the page buffer from the specified address.
+ *
+ * Reads a 256-byte page from flash memory into the buffer.
+ *
+ * @param addr Address to read from flash memory.
+ * @return int32_t Returns 0 on success, -1 on failure.
+ */
+static int32_t ospi_fill_page(uint32_t addr)
 {
+    // Align address to the page size
+    uint32_t aligned_addr = addr & ~(OSPI_MAX_RX_COUNT - 1);
+
+    printf("Read OSPI at addr: 0x%lx\n", aligned_addr);
+
+    // Check if the flash is busy
     flash_status = FlashDrv->GetStatus();
     if (flash_status.busy) {
         printf("OSPI busy!\n");
         return -1;
-    }
+    }    
 
-    printf("OSPI Read addr: %lx, cnt: %lx\n", addr, cnt);
-    int32_t status = FlashDrv->ReadData(addr, data, cnt);
-    if ((int64_t)cnt != (int64_t)status)
-    {
-        printf("Read error: %lx\n", status);
+    // Read one page into the buffer
+    int32_t ret = FlashDrv->ReadData(aligned_addr, page_buffer, OSPI_MAX_RX_COUNT);
+    if (ret != OSPI_MAX_RX_COUNT) {
+        printf("Page fill error: %lx\n", ret);
         return -1;
     }
 
-    dump_data("rd data", data, cnt);
+    // Update page metadata
+    page_start_addr = aligned_addr;
+    page_valid_size = OSPI_MAX_RX_COUNT;
 
     return 0;
 }
 
+/**
+ * @brief Reads data using page buffering to optimize flash access.
+ *
+ * Supports partial reads and unaligned addresses by using cached page data.
+ *
+ * @param addr Address to read from.
+ * @param data Pointer to output buffer.
+ * @param cnt Number of bytes to read.
+ * @return int32_t Returns 0 on success, -1 on failure.
+ */
+static int32_t ospi_read_page_buffered(uint32_t addr, void *data, uint32_t cnt)
+{
+    uint8_t *output = (uint8_t *)data;
+    uint32_t remaining = cnt;
+
+    // Check if address and length exceed allowed range
+    if ((addr + cnt) > FLASH_SIZE) {
+        printf("Error: Read out of bounds: addr=0x%lx, cnt=0x%lx\n", addr, cnt);
+        return -1;
+    }
+
+    while (remaining > 0) {
+        // Align address to 256-byte boundary
+        uint32_t aligned_addr = addr & ~(OSPI_MAX_RX_COUNT - 1);
+
+        // Load a new page if not already loaded
+        if (aligned_addr != page_start_addr) {
+            if (ospi_fill_page(aligned_addr) != 0) {
+                return -1; // Error filling page
+            }
+        }
+
+        // Calculate offset within the current page
+        uint32_t offset = addr - page_start_addr;
+
+        // Determine how many bytes can be copied from the page
+        uint32_t bytes_to_copy = OSPI_MAX_RX_COUNT - offset;
+        if (bytes_to_copy > remaining) {
+            bytes_to_copy = remaining;
+        }
+
+        // Copy data from the page buffer
+        memcpy(output, &page_buffer[offset], bytes_to_copy);
+
+        // Update pointers and counters
+        addr += bytes_to_copy;
+        output += bytes_to_copy;
+        remaining -= bytes_to_copy;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Reads data from OSPI flash memory, ensuring 16-bit alignment.
+ * 
+ * This function handles cases where the OSPI flash memory only supports 
+ * 16-bit word reads. If the requested data size (cnt) is odd, it performs 
+ * an aligned read and safely handles the last byte using a temporary buffer.
+ *
+ * Algorithm:
+ * 1. Ensure the total number of bytes to read is even to match 16-bit alignment.
+ * 2. Use a temporary buffer to handle any odd-byte cases without overwriting memory.
+ * 3. Copy only the required bytes into the provided buffer.
+ *
+ * @param addr  The start address in flash memory to read from.
+ * @param data  Pointer to the buffer where data will be stored.
+ * @param cnt   Number of bytes to read.
+ * @return int32_t Returns 0 on success, -1 on failure.
+ */
+static int32_t ospi_read_data(uint32_t addr, void *data, uint32_t cnt)
+{
+    printf("OSPI buffered: 0x%lx, cnt: 0x%lx\n", addr, cnt);
+
+    // Read data using page-buffered function
+    int32_t status = ospi_read_page_buffered(addr, data, cnt);
+    if (status != 0) {
+        printf("Read error: %lx\n", status);
+        return status;
+    }
+
+    // Print the read data
+    dump_data("rd data", data, cnt);
+
+    return 0; // Return success
+}
 
 static int32_t ospi_write_data(uint32_t addr, const void *data, uint32_t cnt)
 {
@@ -134,85 +245,6 @@ int ospi_flash_init(void)
 
     printf("OSPI Init\n");
     OSPI_Driver.Init();
-
-    // status = FlashDrv->Initialize(NULL);
-    // if (status != ARM_DRIVER_OK)
-    // {
-    //     printf("OSPI Flash: Init failed, error: %lx\n", status);
-    //     return -1;
-    // }
-
-    // status = FlashDrv->PowerControl(ARM_POWER_FULL);
-    // if (status != ARM_DRIVER_OK)
-    // {
-    //     printf("Power OSPI failed, error: %lx\n", status);
-    //     return -1;
-    // }
-
-    // const uint32_t sector_addr = 1 * FlashDrv->GetInfo()->sector_size;
-    // const uint32_t sector_size = FlashDrv->GetInfo()->sector_size;
-    // const uint32_t sector_count = FlashDrv->GetInfo()->sector_count;
-    // printf("OSPI Flash: Sector Size: %lu bytes, Sector Count: %lu\n", sector_size, sector_count);
-    // printf("OSPI Flash: Sector Address: %lu bytes\n", sector_addr);
-    // printf("\n");
-
-    // status = FlashDrv->EraseSector(TEST_ADDRESS);
-    // if (status != ARM_DRIVER_OK) {
-    //     printf("Erase error: %lx\n", status);
-    //     return;
-    // }
-
-    // ARM_FLASH_STATUS flash_status = FlashDrv->GetStatus();
-    // if (flash_status.busy) {
-    //     printf("OSPI busy!\n");
-    //     return;
-    // }
-
-    // for (uint32_t i = 0; i < TEST_DATA_SIZE; i++) {
-    //     tx_buffer[i] = (uint8_t)(i & 0xFF); // Заполняем данные тестовыми значениями
-    // }
-    // dump_data("wr data:", tx_buffer, TEST_DATA_SIZE);
-
-    // // data destroyed in the TX buffer after tx finish
-    // memcpy(add_buffer, tx_buffer, TEST_DATA_SIZE);
-    // status = FlashDrv->ProgramData(TEST_ADDRESS, tx_buffer, TEST_DATA_SIZE);
-    
-    // if (status != TEST_DATA_SIZE) {
-    //     printf("Write error: %lx\n", status);
-    //     return;
-    // }
-
-    // flash_status = FlashDrv->GetStatus();
-    // if (flash_status.busy) {
-    //     printf("OSPI busy!\n");
-    //     return;
-    // }
-
-    // memset(rx_buffer, 0, TEST_DATA_SIZE); // Очищаем буфер
-    // status = FlashDrv->ReadData(TEST_ADDRESS, rx_buffer, TEST_DATA_SIZE);
-    // if (status != TEST_DATA_SIZE) {
-    //     printf("Read error: %lx\n", status);
-    //     return;
-    // }
-
-    // dump_data("Read data mass", rx_buffer, TEST_DATA_SIZE);
-
-    // // Check that the data was written correctly
-    // if (memcmp(add_buffer, rx_buffer, TEST_DATA_SIZE) == 0) {
-    //     printf("WR Data success.\n");
-    // } else {
-    //     printf("WR Data failed.\n");
-    // }
-
-    // status = FlashDrv->PowerControl(ARM_POWER_OFF);
-    // if (status != ARM_DRIVER_OK) {
-    //     printf("Power OFF OSPI error: %lx\n", status);
-    // }
-
-    // status = FlashDrv->Uninitialize();
-    // if (status != ARM_DRIVER_OK) {
-    //     printf("Deinit OSPI error: %lx\n", status);
-    // }
 
     return 0;
 }
