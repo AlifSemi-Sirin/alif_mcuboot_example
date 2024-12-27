@@ -331,7 +331,7 @@ int read_image_state(int image_id, uint8_t* test_boot, uint8_t* update_available
         return err;
     }
     printf("BOOTLOADER: SECONDARY slot:\n");
-    return read_single_image_state(OSPI_AREA_IMAGE_SECONDARY(image_id), 0, update_available);
+    return read_single_image_state(FLASH_AREA_IMAGE_SECONDARY(image_id), 0, update_available);
 }
 
 

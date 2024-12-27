@@ -68,7 +68,7 @@ static struct flash_area secondary_1 =
 
 static struct flash_area ospi_flash_area =
 {
-    .fa_id = OSPI_AREA_IMAGE_SECONDARY(0),
+    .fa_id = FLASH_AREA_IMAGE_SECONDARY(0),
     .fa_device_id = FLASH_DEVICE_OSPI,
     .fa_off = OSPI_BASE +\
                 IMAGE_0_START,
@@ -401,14 +401,26 @@ int flash_area_get_sectors(int fa_id, uint32_t *count,
                            struct flash_sector *sectors)
 {
     struct flash_area *fa = get_flash_area_from_id((uint8_t) fa_id);
+    size_t sector_size;
+    uint32_t total_count = 0;
 
-    if (fa == NULL || fa->fa_device_id != FLASH_DEVICE_MRAM)
+    if (fa == NULL)
     {
         return -1;
     }
 
-    size_t sector_size = MRAM_SECTOR_SIZE;
-    uint32_t total_count = 0;
+    if (fa->fa_device_id == FLASH_DEVICE_MRAM)
+    {
+        sector_size = MRAM_SECTOR_SIZE;
+    }
+    else if (fa->fa_device_id == FLASH_DEVICE_OSPI)
+    {
+        sector_size = OSPI_SECTOR_SIZE;
+    }
+    else
+    {
+        return -1;
+    }
 
     for (uint32_t off = 0; off < fa->fa_size; off += sector_size)
     {

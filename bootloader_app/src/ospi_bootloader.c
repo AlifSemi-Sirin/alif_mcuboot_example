@@ -27,10 +27,11 @@ static ARM_DRIVER_FLASH *FlashDrv = &ARM_Driver_Flash_(1);
 static ARM_FLASH_STATUS flash_status;
 
 // Static page buffer and control variables
-#define OSPI_MAX_RX_COUNT                                        256
+#define PAGE_SIZE                                              256
 #define FLASH_SIZE                                             (16 * 1024 * 1024) // 16MB
 
-static uint8_t page_buffer[OSPI_MAX_RX_COUNT];   // Buffer for a single page
+static uint8_t rx_buffer[PAGE_SIZE];            // Buffer for a single page
+static uint8_t page_buffer_tst[PAGE_SIZE]; 
 static uint32_t page_start_addr = 0xFFFFFFFF; // Start address of cached page
 static uint32_t page_valid_size = 0;          // Valid data size in the page
 
@@ -77,7 +78,7 @@ static int32_t ospi_drv_init(void)
 static int32_t ospi_fill_page(uint32_t addr)
 {
     // Align address to the page size
-    uint32_t aligned_addr = addr & ~(OSPI_MAX_RX_COUNT - 1);
+    uint32_t aligned_addr = addr & ~(PAGE_SIZE - 1);
 
     printf("Read OSPI at addr: 0x%lx\n", aligned_addr);
 
@@ -89,15 +90,18 @@ static int32_t ospi_fill_page(uint32_t addr)
     }    
 
     // Read one page into the buffer
-    int32_t ret = FlashDrv->ReadData(aligned_addr, page_buffer, OSPI_MAX_RX_COUNT);
-    if (ret != OSPI_MAX_RX_COUNT) {
+    int32_t ret = FlashDrv->ReadData(aligned_addr, rx_buffer, PAGE_SIZE);
+    if (ret != PAGE_SIZE) {
         printf("Page fill error: %lx\n", ret);
         return -1;
     }
 
     // Update page metadata
     page_start_addr = aligned_addr;
-    page_valid_size = OSPI_MAX_RX_COUNT;
+    page_valid_size = PAGE_SIZE;
+
+    // Print data
+    dump_data("-->>rd data", rx_buffer, PAGE_SIZE);
 
     return 0;
 }
@@ -125,7 +129,7 @@ static int32_t ospi_read_page_buffered(uint32_t addr, void *data, uint32_t cnt)
 
     while (remaining > 0) {
         // Align address to 256-byte boundary
-        uint32_t aligned_addr = addr & ~(OSPI_MAX_RX_COUNT - 1);
+        uint32_t aligned_addr = addr & ~(PAGE_SIZE - 1);
 
         // Load a new page if not already loaded
         if (aligned_addr != page_start_addr) {
@@ -138,13 +142,13 @@ static int32_t ospi_read_page_buffered(uint32_t addr, void *data, uint32_t cnt)
         uint32_t offset = addr - page_start_addr;
 
         // Determine how many bytes can be copied from the page
-        uint32_t bytes_to_copy = OSPI_MAX_RX_COUNT - offset;
+        uint32_t bytes_to_copy = PAGE_SIZE - offset;
         if (bytes_to_copy > remaining) {
             bytes_to_copy = remaining;
         }
 
         // Copy data from the page buffer
-        memcpy(output, &page_buffer[offset], bytes_to_copy);
+        memcpy(output, &rx_buffer[offset], bytes_to_copy);
 
         // Update pointers and counters
         addr += bytes_to_copy;
@@ -153,6 +157,12 @@ static int32_t ospi_read_page_buffered(uint32_t addr, void *data, uint32_t cnt)
     }
 
     return 0;
+}
+
+static void ospi_read_data_clear_cash(void)
+{
+    page_start_addr = 0xFFFFFFFF;
+    page_valid_size = 0;
 }
 
 /**
@@ -174,7 +184,7 @@ static int32_t ospi_read_page_buffered(uint32_t addr, void *data, uint32_t cnt)
  */
 static int32_t ospi_read_data(uint32_t addr, void *data, uint32_t cnt)
 {
-    printf("OSPI buffered: 0x%lx, cnt: 0x%lx\n", addr, cnt);
+    printf("OSPI RD buffered: 0x%lx, cnt: 0x%lx\n", addr, cnt);
 
     // Read data using page-buffered function
     int32_t status = ospi_read_page_buffered(addr, data, cnt);
@@ -183,10 +193,7 @@ static int32_t ospi_read_data(uint32_t addr, void *data, uint32_t cnt)
         return status;
     }
 
-    // Print the read data
-    dump_data("rd data", data, cnt);
-
-    return 0; // Return success
+    return 0; 
 }
 
 static int32_t ospi_write_data(uint32_t addr, const void *data, uint32_t cnt)
@@ -203,18 +210,31 @@ static int32_t ospi_write_data(uint32_t addr, const void *data, uint32_t cnt)
         return -1;
     }
 
-    printf("OSPI Write addr: %lx, cnt: %lx\n", addr, cnt);
-    FlashDrv->ProgramData(addr, data, cnt);
-    // if (status != cnt) {
-    //     printf("Write error: %lx\n", status);
-    //     return -1;
-    // }
+    printf("OSPI WR addr: %lx, cnt: %lx\n", addr, cnt);
+    // Print data
+    dump_data("-->>wr data", data, cnt);
+
+    status = FlashDrv->ProgramData(addr, data, cnt);
+    if (status != (int32_t)cnt) {
+        printf("Write error: %lx\n", status);
+        return -1;
+    }
 
     flash_status = FlashDrv->GetStatus();
     if (flash_status.busy) {
         printf("OSPI busy!\n");
         return -1;
     }
+
+
+
+    // Read data using page-buffered function
+    ospi_read_data_clear_cash();
+    status = ospi_read_page_buffered(addr, page_buffer_tst, cnt);
+    if (status != 0) {
+        printf("Read error: %lx\n", status);
+        return status;
+    }    
 
     return 0;
 }

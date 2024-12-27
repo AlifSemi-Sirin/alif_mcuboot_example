@@ -33,7 +33,7 @@
   ScriptFile = ""
   RAMAddr = 0x20000000
   RAMSize = 0x00010000
-  CheckCoreID = 1
+  CheckCoreID = 0
   CoreID = 0x4BA06477
   CoreIDMask = 0x0F000FFF
   UseAutoSpeed = 0x00000001
