@@ -26,11 +26,6 @@
 #define OSPI_BASE                           0x00000000
 #define OSPI_ERASE_VALUE                    0xFF
 
-// ToDo - set values
-// #define OSPI_WRITE_SIZE                     16
-// #define OSPI_ADDR_ALIGN_MASK                0xFFFFFFF0U
-
-
 OspiDriver_t OSPI_Driver;
 
 static struct flash_area bootloader =
@@ -52,28 +47,22 @@ static struct flash_area primary_1 =
     .fa_size = BOOT_SLOT_SIZE
 };
 
-/*
-static struct flash_area secondary_1 =
-{
-    .fa_id = FLASH_AREA_IMAGE_SECONDARY(0),
-    .fa_device_id = FLASH_DEVICE_MRAM,
-    .fa_off = MRAM_BASE +\
-                IMAGE_0_START +\
-                BOOT_BOOTLOADER_SIZE +\
-                BOOT_SLOT_SIZE,
-    .fa_size = BOOT_SLOT_SIZE
-};
-*/
-
-
-static struct flash_area ospi_flash_area =
+static struct flash_area ospi_flash_area_0 =
 {
     .fa_id = FLASH_AREA_IMAGE_SECONDARY(0),
     .fa_device_id = FLASH_DEVICE_OSPI,
-    .fa_off = OSPI_BASE +\
-                IMAGE_0_START,
+    .fa_off = OSPI_BASE,
     .fa_size = BOOT_SLOT_SIZE
 };
+
+static struct flash_area ospi_flash_area_1 =
+{
+    .fa_id = FLASH_AREA_IMAGE_SECONDARY(1),
+    .fa_device_id = FLASH_DEVICE_OSPI,
+    .fa_off = OSPI_BASE + BOOT_SLOT_SIZE,
+    .fa_size = BOOT_SLOT_SIZE    
+};
+
 
 
 #ifdef MCUBOOT_SWAP_USING_SCRATCH
@@ -113,7 +102,8 @@ struct flash_area *boot_area_descs[] =
 {
     &bootloader,
     &primary_1,
-    &ospi_flash_area,
+    &ospi_flash_area_0,
+    &ospi_flash_area_1,
 #ifdef MCUBOOT_SWAP_USING_SCRATCH
     &scratch,
 #endif

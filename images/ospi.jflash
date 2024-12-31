@@ -3,7 +3,7 @@
 [GENERAL]
   aATEModuleSel[24] = 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
   ConnectMode = 0
-  CurrentFile = "/home/michael/Alif/alif_mcuboot_example/images/bbb_ospi.bin"
+  CurrentFile = "/home/michael/Alif/alif_mcuboot_example/images/ccc_merged.bin"
   DataFileSAddr = 0xC0000000
   GUIMode = 0
   HostName = ""

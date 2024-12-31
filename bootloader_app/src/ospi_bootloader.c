@@ -80,7 +80,7 @@ static int32_t ospi_fill_page(uint32_t addr)
     // Align address to the page size
     uint32_t aligned_addr = addr & ~(PAGE_SIZE - 1);
 
-    printf("Read OSPI at addr: 0x%lx\n", aligned_addr);
+    // printf("Read OSPI at addr: 0x%lx\n", aligned_addr);
 
     // Check if the flash is busy
     flash_status = FlashDrv->GetStatus();
@@ -184,7 +184,7 @@ static void ospi_read_data_clear_cash(void)
  */
 static int32_t ospi_read_data(uint32_t addr, void *data, uint32_t cnt)
 {
-    printf("OSPI RD buffered: 0x%lx, cnt: 0x%lx\n", addr, cnt);
+    // printf("OSPI RD buffered: 0x%lx, cnt: 0x%lx\n", addr, cnt);
 
     // Read data using page-buffered function
     int32_t status = ospi_read_page_buffered(addr, data, cnt);

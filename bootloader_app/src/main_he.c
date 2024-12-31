@@ -280,7 +280,7 @@ void uninit()
 }
 
 
-static int read_single_image_state(int id, uint8_t* test_boot, uint8_t* update_available)
+static int read_single_image_state(int id, uint8_t* update_available)
 {
     const struct flash_area* fa;
     int err = flash_area_open(id, &fa);
@@ -306,34 +306,19 @@ static int read_single_image_state(int id, uint8_t* test_boot, uint8_t* update_a
     printf("  image_ok:  %u\n", sstate.image_ok);
     printf("  image_num: %u\n", sstate.image_num);
 
-    if(sstate.swap_type == BOOT_SWAP_TYPE_TEST && sstate.image_ok == BOOT_MAGIC_UNSET && test_boot) {
-        *test_boot = 1;
-    }
-
     struct image_header header;
     err = boot_image_load_header(fa, &header);
     if(!err) {
-        printf("  version:   %u.%u.%u\n", header.ih_ver.iv_major, header.ih_ver.iv_minor, header.ih_ver.iv_revision);
-        if (update_available) {
+        printf("Possible update version:   %u.%u.%u\n", header.ih_ver.iv_major, header.ih_ver.iv_minor, header.ih_ver.iv_revision);
+        if (update_available != NULL) {
             *update_available = 1;
         }
     }
     
     flash_area_close(fa);
     return 0;
+    
 }
-
-int read_image_state(int image_id, uint8_t* test_boot, uint8_t* update_available)
-{
-    printf("BOOTLOADER: PRIMARY slot:\n");
-    int err = read_single_image_state(FLASH_AREA_IMAGE_PRIMARY(image_id), test_boot, 0);
-    if (err) {
-        return err;
-    }
-    printf("BOOTLOADER: SECONDARY slot:\n");
-    return read_single_image_state(FLASH_AREA_IMAGE_SECONDARY(image_id), 0, update_available);
-}
-
 
 static int uart_read_int(void) {
     char buffer[16]; 
@@ -365,6 +350,7 @@ int display_menu_and_get_choice(void) {
     printf("\n==== Bootloader Menu ====\n");
     printf("1. Start Image 1\n");
     printf("2. Start Image 2\n");
+    printf("2. Start Image 3\n");
     printf("=========================\n");
 
     // Read user input via UART
@@ -375,8 +361,6 @@ int display_menu_and_get_choice(void) {
     
     return choice;
 }
-
-
 
 
 int main(void)
@@ -435,13 +419,49 @@ int main(void)
 
     printf("Bootloader M55-HE start...\n");
 
-    static uint8_t test_boot = 0;
     uint8_t update_available = 0;
-    read_image_state(0, &test_boot, &update_available);    
+    int image_id = 1;
+    int slot_idx = FLASH_AREA_IMAGE_PRIMARY(image_id);  // image wanted to be updated
 
+    printf("BOOTLOADER PRIMARY image_mode: %d, image_id: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, image_id, slot_idx);
+    int ret = read_single_image_state(slot_idx, 0);
+    if (ret) {
+        printf("RIMARY image error: %d\n", ret);
+        while(1) __WFE();
+    }
+
+    slot_idx = FLASH_AREA_IMAGE_SECONDARY(0);  // image wanted to be updated
+    printf("BOOTLOADER SECONDARY image_mode: %d, image_id: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, image_id, slot_idx);
+    ret = read_single_image_state(slot_idx, &update_available);
+    if (ret) {
+        printf("SECONDARY image error: %d\n", ret);
+        while(1) __WFE();
+    }
+
+    slot_idx = FLASH_AREA_IMAGE_SECONDARY(1);  // image wanted to be updated
+    printf("BOOTLOADER SECONDARY image_mode: %d, image_id: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, image_id, slot_idx);
+    ret = read_single_image_state(slot_idx, &update_available);
+    if (ret) {
+        printf("SECONDARY image error: %d\n", ret);
+        while(1) __WFE();
+    }
+
+    slot_idx = FLASH_AREA_IMAGE_SECONDARY(2);  // image wanted to be updated
+    printf("BOOTLOADER SECONDARY image_mode: %d, image_id: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, image_id, slot_idx);
+    ret = read_single_image_state(slot_idx, &update_available);
+    if (ret) {
+        printf("SECONDARY image error: %d\n", ret);
+        while(1) __WFE();
+    }
+
+    printf("=====================================\n");
+
+    // Check if an update is available and handle it accordingly
     if(update_available) {
         // Display the menu and get the user's choice
-        int choice = display_menu_and_get_choice();    
+        // int choice = display_menu_and_get_choice();    
+        int choice = 2;    
+        const int permanent_mode = 1; 
 
         // Handle user choice
         switch (choice) {
@@ -454,12 +474,20 @@ int main(void)
                 break;
 
             case 2:
+                printf("Booting Primary Image from OSPI.\n");
+                // set pending to image_id 0
+                ret = boot_set_pending_multi(0, permanent_mode);
+                if(ret) {
+                    printf("set_pending error: %d\n", ret);
+                }
+                break;
+
+            case 3:
                 printf("Booting Secondary Image from OSPI.\n");
-                // set pending to image_id
-                const int image_id = 0;
-                int err = boot_set_pending_multi(image_id, 0);
-                if(err) {
-                    printf("set_pending error: %d\n", err);
+                // set pending to image_id 1
+                ret = boot_set_pending_multi(1, permanent_mode);
+                if(ret) {
+                    printf("set_pending error: %d\n", ret);
                 }
                 break;
 
@@ -474,6 +502,8 @@ int main(void)
 
     struct arm_vector_table *vt;
     struct boot_rsp rsp;
+
+// while(1) sys_busy_loop_us(1000);
 
 #if HE_UPDATES_BOTH
     // this core is the single updater so run update for all images
