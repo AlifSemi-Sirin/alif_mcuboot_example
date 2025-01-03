@@ -83,6 +83,8 @@ static mhu_driver_out_t mhu_driver_out;
 
 static uint32_t se_services_s_handle;
 
+struct image_version versions[10];
+
 
 void MHU_RTSS_S_TX_IRQHandler(void)
 {
@@ -280,12 +282,11 @@ void uninit()
 }
 
 
-static int read_single_image_state(int id, uint8_t* update_available)
+static int read_single_image_state(int id, uint8_t* update_available, struct image_version *ver)
 {
     const struct flash_area* fa;
     int err = flash_area_open(id, &fa);
     if (err != 0) {
-        printf("flash_area_open error %d\n", err);
         return -1;
     }
 
@@ -309,15 +310,22 @@ static int read_single_image_state(int id, uint8_t* update_available)
     struct image_header header;
     err = boot_image_load_header(fa, &header);
     if(!err) {
-        printf("Possible update version:   %u.%u.%u\n", header.ih_ver.iv_major, header.ih_ver.iv_minor, header.ih_ver.iv_revision);
+        printf("Possible update version:   %u.%u.%u\n", 
+               header.ih_ver.iv_major, header.ih_ver.iv_minor, header.ih_ver.iv_revision);
         if (update_available != NULL) {
             *update_available = 1;
+        }
+
+        if (ver != NULL) {
+            ver->iv_major = header.ih_ver.iv_major;
+            ver->iv_minor = header.ih_ver.iv_minor;
+            ver->iv_revision = header.ih_ver.iv_revision;
+            ver->iv_build_num = header.ih_ver.iv_build_num;
         }
     }
     
     flash_area_close(fa);
     return 0;
-    
 }
 
 static int uart_read_int(void) {
@@ -342,24 +350,20 @@ static int uart_read_int(void) {
     return atoi(buffer);
 }
 
-
-// Function to display a menu and get user input
-int display_menu_and_get_choice(void) {
-    int choice = -1;
-
+void display_menu_and_get_choice(int available_images, struct image_version *versions)
+{
     printf("\n==== Bootloader Menu ====\n");
-    printf("1. Start Image 1\n");
-    printf("2. Start Image 2\n");
-    printf("2. Start Image 3\n");
-    printf("=========================\n");
 
-    // Read user input via UART
-    do{
-        printf("Enter your choice: \n");
-        choice = uart_read_int(); 
-    } while (choice < 1 || choice > 2);
-    
-    return choice;
+    printf("0. Start Primary Image (v%d.%d.%d, build %d)\n", 
+            (int)versions[0].iv_major, (int)versions[0].iv_minor, (int)versions[0].iv_revision, (int)versions[0].iv_build_num);
+
+    for (int i = 0; i < available_images; i++) {
+        printf("%d. Start Secondary Image %d (v%d.%d.%d, build %d)\n", 
+                i + 1, i + 1, 
+                (int)versions[i + 1].iv_major, (int)versions[i + 1].iv_minor, 
+                (int)versions[i + 1].iv_revision, (int)versions[i + 1].iv_build_num);
+    }
+    printf("=========================\n");
 }
 
 
@@ -418,99 +422,65 @@ int main(void)
     }
 
     printf("Bootloader M55-HE start...\n");
+    
+    const int image_idx = 0;
 
-    uint8_t update_available = 0;
-    int image_id = 1;
-    int slot_idx = FLASH_AREA_IMAGE_PRIMARY(image_id);  // image wanted to be updated
-
-    printf("BOOTLOADER PRIMARY image_mode: %d, image_id: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, image_id, slot_idx);
-    int ret = read_single_image_state(slot_idx, 0);
+    printf("BOOTLOADER PRIMARY image_mode: %d, image_idx: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, image_idx, FLASH_AREA_IMAGE_PRIMARY(image_idx));
+    int ret = read_single_image_state(FLASH_AREA_IMAGE_PRIMARY(image_idx), NULL, &versions[0]);
     if (ret) {
         printf("RIMARY image error: %d\n", ret);
         while(1) __WFE();
     }
 
-    slot_idx = FLASH_AREA_IMAGE_SECONDARY(0);  // image wanted to be updated
-    printf("BOOTLOADER SECONDARY image_mode: %d, image_id: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, image_id, slot_idx);
-    ret = read_single_image_state(slot_idx, &update_available);
-    if (ret) {
-        printf("SECONDARY image error: %d\n", ret);
-        while(1) __WFE();
-    }
-
-    slot_idx = FLASH_AREA_IMAGE_SECONDARY(1);  // image wanted to be updated
-    printf("BOOTLOADER SECONDARY image_mode: %d, image_id: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, image_id, slot_idx);
-    ret = read_single_image_state(slot_idx, &update_available);
-    if (ret) {
-        printf("SECONDARY image error: %d\n", ret);
-        while(1) __WFE();
-    }
-
-    slot_idx = FLASH_AREA_IMAGE_SECONDARY(2);  // image wanted to be updated
-    printf("BOOTLOADER SECONDARY image_mode: %d, image_id: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, image_id, slot_idx);
-    ret = read_single_image_state(slot_idx, &update_available);
-    if (ret) {
-        printf("SECONDARY image error: %d\n", ret);
-        while(1) __WFE();
-    }
-
-    printf("=====================================\n");
-
-    // Check if an update is available and handle it accordingly
-    if(update_available) {
-        // Display the menu and get the user's choice
-        // int choice = display_menu_and_get_choice();    
-        int choice = 2;    
-        const int permanent_mode = 1; 
-
-        // Handle user choice
-        switch (choice) {
-            case 1:
-                printf("Booting Primary Image from MRAM.\n");
-                // manually reset bootloader pending update
-                if(boot_set_confirmed_multi(0) != 0) {
-                    printf("set_confirmed_multi error!\n");
-                }        
-                break;
-
-            case 2:
-                printf("Booting Primary Image from OSPI.\n");
-                // set pending to image_id 0
-                ret = boot_set_pending_multi(0, permanent_mode);
-                if(ret) {
-                    printf("set_pending error: %d\n", ret);
-                }
-                break;
-
-            case 3:
-                printf("Booting Secondary Image from OSPI.\n");
-                // set pending to image_id 1
-                ret = boot_set_pending_multi(1, permanent_mode);
-                if(ret) {
-                    printf("set_pending error: %d\n", ret);
-                }
-                break;
-
-            default:
-                printf("Starting default Image 1...\n");
-                // manually reset bootloader pending update
-                if(boot_set_confirmed_multi(0) != 0) {
-                    printf("set_confirmed_multi error!\n");
-                }        
+    uint8_t update_available = 0;
+    int i = 0;
+    while(1){
+        ret = read_single_image_state(FLASH_AREA_IMAGE_SECONDARY(i), &update_available, &versions[i + 1]);
+        if (ret != 0) {
+            break;
         }
+        i++;
+    };
+
+    const int available_images = i;
+    display_menu_and_get_choice(available_images, versions);  
+
+    int choice;
+    do {
+        printf("Enter your choice: \n");
+        choice = uart_read_int();
+    } while (choice > available_images);   
+    
+// choice = 2;
+
+    if (choice == 0) {
+        printf("Booting Primary Slot\n");
+        ret = boot_set_confirmed_multi(choice);
+    } else {
+        const int permanent_mode = 0;
+        printf("Booting OSPI slot %d\n", choice);
+        
+        if(choice == 1) {
+            ret = boot_set_pending_multi(0, permanent_mode);
+        } else {
+            ret = boot_set_pending_multi(1, permanent_mode);   
+        }
+    }      
+
+    if(ret) {
+        printf("Image selection error: %d\n", ret);
+        while(1) __WFE();
     }
 
     struct arm_vector_table *vt;
     struct boot_rsp rsp;
-
-// while(1) sys_busy_loop_us(1000);
 
 #if HE_UPDATES_BOTH
     // this core is the single updater so run update for all images
     int rv = boot_go(&rsp);
 #else
     // both cores handle themselves
-    int rv = boot_go_for_image_id(&rsp, 0);
+    int rv = boot_go_for_image_id(&rsp, image_idx);
 #endif
 
     if (rv == 0)

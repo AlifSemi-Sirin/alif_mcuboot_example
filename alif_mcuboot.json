@@ -22,14 +22,5 @@
         "mramAddress": "0x80010000",
         "cpu_id": "M55_HE",
         "flags": []
-    },
-    "HE_SEC": {
-        "disabled": false,
-        "binary": "alif-secondary-app.bin",
-        "version": "1.0.0",
-        "signed": false,
-        "mramAddress": "0x80190000",
-        "cpu_id": "M55_HE",
-        "flags": []
     }
 }
