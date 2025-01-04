@@ -84,7 +84,7 @@ static mhu_driver_out_t mhu_driver_out;
 static uint32_t se_services_s_handle;
 
 struct image_version versions[10];
-extern fih_ret context_boot_go_ospi(struct boot_rsp *rsp);
+extern fih_ret context_boot_go_ospi(struct boot_rsp *rsp, uint8_t pri_image_id, uint8_t sec_image_id);
 
 void MHU_RTSS_S_TX_IRQHandler(void)
 {
@@ -422,67 +422,74 @@ int main(void)
     }
 
     printf("Bootloader M55-HE start...\n");
+    int choice;
+    struct boot_rsp rsp;
+    int ret;
     
-    const int image_idx = 0;
-
-    printf("BOOTLOADER PRIMARY image_mode: %d, image_idx: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, image_idx, FLASH_AREA_IMAGE_PRIMARY(image_idx));
-    int ret = read_single_image_state(FLASH_AREA_IMAGE_PRIMARY(image_idx), NULL, &versions[0]);
+    printf("BOOTLOADER PRIMARY image_mode: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, FLASH_AREA_IMAGE_0_PRIMARY);
+    ret = read_single_image_state(FLASH_AREA_IMAGE_0_PRIMARY, NULL, &versions[0]);
     if (ret) {
         printf("RIMARY image error: %d\n", ret);
         while(1) __WFE();
     }
 
     uint8_t update_available = 0;
-    int i = 0;
+    int cnt = 0;
     while(1){
-        ret = read_single_image_state(FLASH_AREA_IMAGE_SECONDARY(i), &update_available, &versions[i + 1]);
+        ret = read_single_image_state(FLASH_AREA_IMAGE_SECONDARY(cnt), &update_available, &versions[cnt + 1]);
         if (ret != 0) {
             break;
         }
-        i++;
+        cnt++;
     };
 
-    const int available_images = i;
-    display_menu_and_get_choice(available_images, versions);  
+    display_menu_and_get_choice(cnt, versions);  
 
-    int choice;
     do {
         printf("Enter your choice: \n");
         choice = uart_read_int();
-    } while (choice > available_images);   
+    } while (choice > cnt);   
     
-// choice = 2;
-
     if (choice == 0) {
         printf("Booting Primary Slot\n");
-        ret = boot_set_confirmed_multi(choice);
+        // ret = boot_set_confirmed_multi(choice);
     } else {
-        const int permanent_mode = 0;
+        // const int permanent_mode = 0;
         printf("Booting OSPI slot %d\n", choice);
         
         if(choice == 1) {
-            ret = boot_set_pending_multi(0, permanent_mode);
+            // ret = boot_set_pending_multi(0, permanent_mode);
+            ret = context_boot_go_ospi(&rsp, FLASH_AREA_IMAGE_0_PRIMARY, FLASH_AREA_IMAGE_0_OSPI);
+        } else  if(choice == 2) {
+            // ret = boot_set_pending_multi(1, permanent_mode);   
+            ret = context_boot_go_ospi(&rsp, FLASH_AREA_IMAGE_0_PRIMARY, FLASH_AREA_IMAGE_1_OSPI);
         } else {
-            ret = boot_set_pending_multi(1, permanent_mode);   
+            printf("Invalid choice\n");
+            while(1) __WFE();
+        }
+
+        if(ret) {
+            printf("Image selection error: %d\n", ret);
+            while(1) __WFE();
         }
     }      
 
-    if(ret) {
-        printf("Image selection error: %d\n", ret);
-        while(1) __WFE();
-    }
+    
+    // boot_set_confirmed_multi(0);
 
     struct arm_vector_table *vt;
-    struct boot_rsp rsp;
+    int rv = 0;
 
 #if HE_UPDATES_BOTH
     // this core is the single updater so run update for all images
-    int rv = boot_go(&rsp);
+    rv = boot_go(&rsp);
 #else
     // both cores handle themselves
-    // int rv = boot_go_for_image_id(&rsp, image_idx);
-    int rv = context_boot_go_ospi(&rsp);
+    rv = boot_go_for_image_id(&rsp, 0);
 #endif
+
+uint32_t strt_addr = rsp.br_hdr->ih_load_addr;
+strt_addr = 0;
 
     if (rv == 0)
     {
@@ -495,10 +502,10 @@ int main(void)
         hwsem->Unlock();
 #endif
         /* Jump to the starting point of the image */
-        if (rsp.br_hdr->ih_load_addr) {
+        if (strt_addr) {
             // RAM LOAD build
             printf("RAM image\n");
-            vt = (struct arm_vector_table *)(rsp.br_hdr->ih_load_addr + rsp.br_hdr->ih_hdr_size);
+            vt = (struct arm_vector_table *)(strt_addr + rsp.br_hdr->ih_hdr_size);
         }
         else {
             // XIP from slot
