@@ -84,7 +84,7 @@ static mhu_driver_out_t mhu_driver_out;
 static uint32_t se_services_s_handle;
 
 struct image_version versions[10];
-
+extern fih_ret context_boot_go_ospi(struct boot_rsp *rsp);
 
 void MHU_RTSS_S_TX_IRQHandler(void)
 {
@@ -480,7 +480,8 @@ int main(void)
     int rv = boot_go(&rsp);
 #else
     // both cores handle themselves
-    int rv = boot_go_for_image_id(&rsp, image_idx);
+    // int rv = boot_go_for_image_id(&rsp, image_idx);
+    int rv = context_boot_go_ospi(&rsp);
 #endif
 
     if (rv == 0)

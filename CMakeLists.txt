@@ -79,6 +79,14 @@ endif()
 
 set(LIBRARIES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libs)
 
+set(ENABLE_OVERWRITE_MODE TRUE CACHE BOOL "Enable MCUboot overwrite-only mode.")
+if(ENABLE_OVERWRITE_MODE)
+    add_compile_definitions(
+        MCUBOOT_OVERWRITE_ONLY=1
+    )
+endif()
+
+
 # Set up the project
 project(alif-mcuboot-example-${ENSEMBLE_CORE}
     VERSION 1.0.0

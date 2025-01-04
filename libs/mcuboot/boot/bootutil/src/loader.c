@@ -3378,6 +3378,132 @@ boot_go(struct boot_rsp *rsp)
     FIH_RET(fih_rc);
 }
 
+fih_ret validate_and_overwrite_image(const struct flash_area *primary_area,
+                                     const struct flash_area *secondary_area)
+{
+    struct image_header app_hdr;
+    uint8_t loader_hash[32];
+    int rc = -1;
+    FIH_DECLARE(fih_rc, FIH_FAILURE);
+
+    // Чтение заголовка образа из вторичной области
+    rc = boot_image_load_header(secondary_area, &app_hdr);
+    if (rc != 0) {
+        BOOT_LOG_ERR("Failed to load secondary image header!");
+        FIH_SET(fih_rc, FIH_FAILURE);
+        return fih_rc;
+    }
+
+    // Проверка волшебного числа и признака загрузочного образа
+    if (app_hdr.ih_magic != IMAGE_MAGIC || (app_hdr.ih_flags & IMAGE_F_NON_BOOTABLE)) {
+        BOOT_LOG_ERR("Invalid image header: magic=0x%x, flags=0x%x",
+                     app_hdr.ih_magic, app_hdr.ih_flags);
+        FIH_SET(fih_rc, FIH_FAILURE);
+        return fih_rc;
+    }
+
+
+    void *tmpbuf = malloc(BOOT_TMPBUF_SZ);
+    if (!tmpbuf) {
+        FIH_SET(fih_rc, FIH_FAILURE);
+        return fih_rc;        
+    }
+
+    // Проверка хэш-суммы образа
+    rc = bootutil_img_validate(NULL, 0, &app_hdr, secondary_area, tmpbuf, BOOT_TMPBUF_SZ, NULL, 0, loader_hash);
+    if (FIH_NOT_EQ(rc, FIH_SUCCESS)) {
+        BOOT_LOG_ERR("Image validation failed!");
+        FIH_SET(fih_rc, FIH_FAILURE);
+        return fih_rc;
+    }
+
+    free(tmpbuf);
+    BOOT_LOG_INF("Image validation passed!");
+
+    // Перезапись основного образа из вторичного
+    BOOT_LOG_INF("Overwriting primary image with secondary image...");
+    rc = flash_area_erase(primary_area, 0, primary_area->fa_size);
+    if (rc != 0) {
+        BOOT_LOG_ERR("Failed to erase primary slot!");
+        FIH_SET(fih_rc, FIH_FAILURE);
+        return fih_rc;
+    }
+
+    // rc = boot_copy_image(primary_area, secondary_area);
+    // if (rc != 0) {
+    //     BOOT_LOG_ERR("Failed to copy image to primary slot!");
+    //     FIH_SET(fih_rc, FIH_FAILURE);
+    //     return fih_rc;
+    // }
+
+    BOOT_LOG_INF("Image successfully copied to primary slot.");
+
+    // Помечаем новый образ как подтверждённый
+    rc = boot_set_confirmed();
+    if (rc != 0) {
+        BOOT_LOG_ERR("Failed to confirm the new image!");
+        FIH_SET(fih_rc, FIH_FAILURE);
+        return fih_rc;
+    }
+
+    // BOOT_LOG_INF("New image confirmed!");
+    FIH_SET(fih_rc, FIH_SUCCESS);
+    return fih_rc;
+}
+
+fih_ret
+context_boot_go_ospi(struct boot_rsp *rsp)
+{
+    const struct flash_area *primary_area;
+    const struct flash_area *secondary_area;
+    int rc = -1;
+    FIH_DECLARE(fih_rc, FIH_FAILURE);
+    // struct boot_status bs;
+
+    BOOT_LOG_INF("Opening primary and secondary flash areas...");
+
+    // Открываем области памяти для основного и вторичного слотов
+    rc = flash_area_open(FLASH_AREA_IMAGE_PRIMARY(0), &primary_area);
+    if (rc != 0) {
+        BOOT_LOG_ERR("Failed to open primary slot!");
+        FIH_SET(fih_rc, FIH_FAILURE);
+        return fih_rc;
+    }
+
+    rc = flash_area_open(FLASH_AREA_IMAGE_SECONDARY(1), &secondary_area);
+    if (rc != 0) {
+        BOOT_LOG_ERR("Failed to open secondary slot!");
+        flash_area_close(primary_area);
+        FIH_SET(fih_rc, FIH_FAILURE);
+        return fih_rc;
+    }
+
+    // Проверяем и перезаписываем образ
+    BOOT_LOG_INF("Validating and overwriting image if necessary...");
+    FIH_CALL(validate_and_overwrite_image, fih_rc, primary_area, secondary_area);
+    if (FIH_NOT_EQ(fih_rc, FIH_SUCCESS)) {
+        BOOT_LOG_ERR("Validation or overwrite failed!");
+        flash_area_close(primary_area);
+        flash_area_close(secondary_area);
+        return fih_rc;
+    }
+
+    // Закрываем области памяти после завершения работы
+    flash_area_close(primary_area);
+    flash_area_close(secondary_area);
+
+    // Логируем успешную замену образа
+    BOOT_LOG_INF("Image validation and overwrite complete!");
+
+    // rsp->br_flash_dev_id = primary_area->fa_dev_id;
+    rsp->br_image_off = primary_area->fa_off; // Смещение до образа
+    // rsp->br_hdr = boot_img_hdr(state, active_slot);
+
+    // Дополнительно можно вернуть статус успеха
+    FIH_SET(fih_rc, FIH_SUCCESS);
+    return fih_rc;
+}
+
 /**
  * Prepares the booting process, considering only a single image. This function
  * moves images around in flash as appropriate, and tells you what address to
