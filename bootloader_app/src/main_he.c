@@ -31,6 +31,7 @@
 
 #include "mhu_driver.h"
 
+#define IRQ_PRIORITY    10
 #define OSPI_RESET_PORT LP
 #define OSPI_RESET_PIN 7
 extern ARM_DRIVER_GPIO Driver_GPIOLP;
@@ -229,6 +230,13 @@ void MPU_Load_Regions(void)
     ARM_MPU_Load(0, mpu_table, sizeof(mpu_table)/sizeof(ARM_MPU_Region_t));
 }
 
+
+void handle_error(const char *message, int code) {
+    printf("ERROR: %s (code: %d)\n", message, code);
+    while(1) __WFE();
+}
+
+
 void hw_init(void)
 {
 
@@ -279,6 +287,19 @@ void uninit()
     
     tracelib_uninit();
     hw_uninit();
+}
+
+
+static void configure_irq(IRQn_Type irq, uint32_t priority) {
+    NVIC_DisableIRQ(irq);
+    NVIC_ClearPendingIRQ(irq);
+    NVIC_SetPriority(irq, priority);
+    NVIC_EnableIRQ(irq);
+}
+
+void ospi_reset(void) {
+    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_LOW);
+    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_HIGH);
 }
 
 
@@ -366,6 +387,42 @@ void display_menu_and_get_choice(int available_images, struct image_version *ver
     printf("=========================\n");
 }
 
+int select_image_slot(int choice, struct boot_rsp *rsp) {
+    if (choice == 0) {
+        printf("Booting Primary Slot\n");
+        return 0; // Primary slot
+    } else if (choice == 1) {
+        return context_boot_go_ospi(rsp, FLASH_AREA_IMAGE_0_PRIMARY, FLASH_AREA_IMAGE_0_OSPI);
+    } else if (choice == 2) {
+        return context_boot_go_ospi(rsp, FLASH_AREA_IMAGE_0_PRIMARY, FLASH_AREA_IMAGE_1_OSPI);
+    } else {
+        printf("Invalid choice\n");
+        return -1; // Error
+    }
+}
+
+void print_image_version(const struct image_header *hdr) {
+    // Don't use PRIu8 for printing as nano spec doesn't support that.
+    printf("\nLoading image, version %" PRIu16 ".%" PRIu16 ".%" PRIu16 " (build: %" PRIu32 ")\n",
+           hdr->ih_ver.iv_major, hdr->ih_ver.iv_minor, hdr->ih_ver.iv_revision, hdr->ih_ver.iv_build_num);
+    printf("  image size: %" PRIu32 ".\n", hdr->ih_img_size);
+}
+
+void jump_to_image(struct arm_vector_table *vt) {
+    // set vector table to application side
+    SCB->VTOR = (uint32_t)vt;
+
+    // reset MSPLIM, set MSP from app vector table and jump to app
+    __asm(
+        "MOV  R0, #0                \n\t"
+        "MSR  MSPLIM, R0            \n\t"
+        "MSR  MSP, %[stack_pointer] \n\t"
+        "BX   %[reset_handler]          "
+        :
+        : [stack_pointer] "r"(vt->msp), [reset_handler] "r"(vt->reset)
+    );
+}
+
 
 int main(void)
 {
@@ -379,26 +436,12 @@ int main(void)
     MHU_driver_initialize(&mhu_driver_in, &mhu_driver_out);
 
 #if HE_UPDATES_BOTH
-    NVIC_DisableIRQ(MHU_RTSS_S_RX_IRQ_IRQn);
-    NVIC_ClearPendingIRQ(MHU_RTSS_S_RX_IRQ_IRQn);
-    NVIC_SetPriority(MHU_RTSS_S_RX_IRQ_IRQn, 10);
-    NVIC_EnableIRQ(MHU_RTSS_S_RX_IRQ_IRQn);
-
-    NVIC_DisableIRQ(MHU_RTSS_S_TX_IRQ_IRQn);
-    NVIC_ClearPendingIRQ(MHU_RTSS_S_TX_IRQ_IRQn);
-    NVIC_SetPriority(MHU_RTSS_S_TX_IRQ_IRQn, 10);
-    NVIC_EnableIRQ(MHU_RTSS_S_TX_IRQ_IRQn);
+    configure_irq(MHU_RTSS_S_RX_IRQ_IRQn, IRQ_PRIORITY);
+    configure_irq(MHU_RTSS_S_TX_IRQ_IRQn, IRQ_PRIORITY);    
 #endif
 
-    NVIC_DisableIRQ(MHU_SESS_S_RX_IRQ_IRQn);
-    NVIC_ClearPendingIRQ(MHU_SESS_S_RX_IRQ_IRQn);
-    NVIC_SetPriority(MHU_SESS_S_RX_IRQ_IRQn, 10);
-    NVIC_EnableIRQ(MHU_SESS_S_RX_IRQ_IRQn);
-
-    NVIC_DisableIRQ(MHU_SESS_S_TX_IRQ_IRQn);
-    NVIC_ClearPendingIRQ(MHU_SESS_S_TX_IRQ_IRQn);
-    NVIC_SetPriority(MHU_SESS_S_TX_IRQ_IRQn, 10);
-    NVIC_EnableIRQ(MHU_SESS_S_TX_IRQ_IRQn);
+    configure_irq(MHU_SESS_S_RX_IRQ_IRQn, IRQ_PRIORITY);
+    configure_irq(MHU_SESS_S_TX_IRQ_IRQn, IRQ_PRIORITY);    
 
     services_init_params.fn_send_mhu_message = mhu_driver_out.send_message;
 
@@ -411,81 +454,51 @@ int main(void)
         while(1) __WFE();
     }
 
-    // Reset the OSPI flash 
-    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_LOW);
-    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_HIGH);
+    ospi_reset();
 
-    // OSPI controller initialization
     if(ospi_flash_init() == -1) {
-        printf("OSPI flash init failed\n");
-        while(1) __WFE();
+        handle_error("OSPI flash init failed", -1);
     }
 
     printf("Bootloader M55-HE start...\n");
-    int choice;
-    struct boot_rsp rsp;
-    int ret;
     
-    printf("BOOTLOADER PRIMARY image_mode: %d, slot_id: %d\n", MCUBOOT_IMAGE_NUMBER, FLASH_AREA_IMAGE_0_PRIMARY);
+    int choice, ret, cnt = 0;
+    struct boot_rsp rsp;
+    uint8_t update_available = 0;
+    
     ret = read_single_image_state(FLASH_AREA_IMAGE_0_PRIMARY, NULL, &versions[0]);
     if (ret) {
-        printf("RIMARY image error: %d\n", ret);
-        while(1) __WFE();
+        handle_error("PRIMARY image error", ret);
     }
 
-    uint8_t update_available = 0;
-    int cnt = 0;
     while(1){
         ret = read_single_image_state(FLASH_AREA_IMAGE_SECONDARY(cnt), &update_available, &versions[cnt + 1]);
         if (ret != 0) {
             break;
         }
         cnt++;
-    };
+    }
 
     display_menu_and_get_choice(cnt, versions);  
 
     do {
         printf("Enter your choice: \n");
         choice = uart_read_int();
-    } while (choice > cnt);   
+    } while (choice > cnt);  
+
+    ret = select_image_slot(choice, &rsp); 
+    if (ret < 0) {
+        handle_error("Invalid image selection", ret);
+    }    
     
-    if (choice == 0) {
-        printf("Booting Primary Slot\n");
-        // ret = boot_set_confirmed_multi(choice);
-    } else {
-        // const int permanent_mode = 0;
-        printf("Booting OSPI slot %d\n", choice);
-        
-        if(choice == 1) {
-            // ret = boot_set_pending_multi(0, permanent_mode);
-            ret = context_boot_go_ospi(&rsp, FLASH_AREA_IMAGE_0_PRIMARY, FLASH_AREA_IMAGE_0_OSPI);
-        } else  if(choice == 2) {
-            // ret = boot_set_pending_multi(1, permanent_mode);   
-            ret = context_boot_go_ospi(&rsp, FLASH_AREA_IMAGE_0_PRIMARY, FLASH_AREA_IMAGE_1_OSPI);
-        } else {
-            printf("Invalid choice\n");
-            while(1) __WFE();
-        }
-
-        if(ret) {
-            printf("Image selection error: %d\n", ret);
-            while(1) __WFE();
-        }
-    }      
-
-    
-    // boot_set_confirmed_multi(0);
-
     struct arm_vector_table *vt;
-    int rv = 0;
 
 #if HE_UPDATES_BOTH
     // this core is the single updater so run update for all images
-    rv = boot_go(&rsp);
+    int rv = boot_go(&rsp);
 #else
     // both cores handle themselves
-    rv = boot_go_for_image_id(&rsp, 0);
+    int rv = boot_go_for_image_id(&rsp, 0);
 #endif
 
 uint32_t strt_addr = rsp.br_hdr->ih_load_addr;
@@ -504,41 +517,28 @@ strt_addr = 0;
         /* Jump to the starting point of the image */
         if (strt_addr) {
             // RAM LOAD build
-            printf("RAM image\n");
             vt = (struct arm_vector_table *)(strt_addr + rsp.br_hdr->ih_hdr_size);
         }
         else {
             // XIP from slot
-            printf("XIP image\n");
             vt = (struct arm_vector_table *)(rsp.br_image_off + rsp.br_hdr->ih_hdr_size);
         }
         
         if ((uint32_t)vt & 0x7FF) {
-            printf("\n ERROR: vector table alignment not correct (0x%" PRIx32 ")\n", (uint32_t)vt);
+            handle_error("Vector table alignment not correct", (uint32_t)vt);
         }
         else {
-            // Don't use PRIu8 for printing as nano spec doesn't support that.
-            printf("\nLoading image, version %" PRIu16 ".%" PRIu16 ".%" PRIu16 " (build: %" PRIu32 ")\n", rsp.br_hdr->ih_ver.iv_major, rsp.br_hdr->ih_ver.iv_minor, rsp.br_hdr->ih_ver.iv_revision, rsp.br_hdr->ih_ver.iv_build_num);
-            printf("  image size: %" PRIu32 ".\n", rsp.br_hdr->ih_img_size);
-            printf("\n");
+            print_image_version(rsp.br_hdr);
             uninit();
-
-            // set vector table to application side
-            SCB->VTOR = (uint32_t)vt;
-
-            // reset MSPLIM, set MSP from app vector table and jump to app
-            __asm(
-                "MOV  R0, #0                \n\t"
-                "MSR  MSPLIM, R0            \n\t"
-                "MSR  MSP, %[stack_pointer] \n\t"
-                "BX   %[reset_handler]          " : : [stack_pointer] "r"(vt->msp), [reset_handler] "r"(vt->reset)
-            );
+            
+            jump_to_image(vt);
         }
     }
     else
     {
-        printf("\n ERROR: %d \n" , rv);
+        handle_error("Boot process failed", rv);
     }
+
     while(1) __WFE();
 }
 

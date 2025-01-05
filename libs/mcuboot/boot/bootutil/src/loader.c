@@ -738,8 +738,6 @@ boot_validate_slot(struct boot_loader_state *state, int slot,
     FIH_DECLARE(fih_rc, FIH_FAILURE);
     int rc;
 
-BOOT_LOG_INF("-->>boot_validate_slot: slot=%d", slot);
-
     area_id = flash_area_id_from_multi_image_slot(BOOT_CURR_IMG(state), slot);
     rc = flash_area_open(area_id, &fap);
     if (rc != 0) {
@@ -2079,7 +2077,6 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
          */
         for (slot = 0; slot < BOOT_NUM_SLOTS; slot++) {
             fa_id = flash_area_id_from_multi_image_slot(image_index, slot);
-BOOT_LOG_INF("-->>img_IDX: %d, slot: %d, ret idx: %d", image_index, slot, fa_id);
 
             rc = flash_area_open(fa_id, &BOOT_IMG_AREA(state, slot));
             assert(rc == 0);
@@ -3378,7 +3375,6 @@ boot_go(struct boot_rsp *rsp)
 }
 
 
-// Простая функция для копирования образа из вторичной области в основную
 static int simple_image_copy(const struct flash_area *primary_area, const struct flash_area *secondary_area, uint8_t *buffer, size_t buff_size) {
     size_t bytes_written = 0;
     size_t total_size = secondary_area->fa_size;
@@ -3414,86 +3410,61 @@ static int simple_image_copy(const struct flash_area *primary_area, const struct
     return 0;
 }
 
-// Упрощенная функция для проверки и копирования образа
-fih_ret validate_and_overwrite_image(const struct flash_area *primary_area,
-                                     const struct flash_area *secondary_area)
+int validate_image(const struct flash_area *area, uint8_t *buf, size_t buf_sz)
 {
-    struct image_header app_hdr;
+    struct image_header hdr;
     uint8_t hash[32];
+    int rc;
+
+    rc = boot_image_load_header(area, &hdr);
+    if (rc == 0) {
+        if (hdr.ih_magic != IMAGE_MAGIC || (hdr.ih_flags & IMAGE_F_NON_BOOTABLE)) {
+            return -1;
+        }    
+
+        rc = bootutil_img_validate(NULL, 0, &hdr, area, buf, buf_sz, NULL, 0, hash);
+        if (FIH_NOT_EQ(rc, FIH_SUCCESS)) {
+            return -1;
+        }
+    }
+    
+    return 0;
+}
+
+fih_ret validate_and_overwrite_image(const struct flash_area *primary_area,
+                                     const struct flash_area *secondary_area) {
     int rc = -1;
+    
     FIH_DECLARE(fih_rc, FIH_FAILURE);
 
-    void *tmpbuf = malloc(BOOT_TMPBUF_SZ);
+    uint8_t *tmpbuf = malloc(BOOT_TMPBUF_SZ);
     if (!tmpbuf) {
-        return fih_rc;        
+        BOOT_LOG_ERR("Memory allocation failed!");
+        FIH_SET(fih_rc, FIH_FAILURE);
+        return fih_rc;
     }
 
-    //----------------------------------------------------------------
-    BOOT_LOG_INF("Loading primary image header...");
-    rc = boot_image_load_header(primary_area, &app_hdr);
-    if (rc != 0) {
+    // Validate Secondary Image
+    BOOT_LOG_INF("Validating secondary image...");
+    if(validate_image(secondary_area, tmpbuf, BOOT_TMPBUF_SZ) != 0) {
+        BOOT_LOG_ERR("Secondary image validation failed!");
         goto err;
     }
 
-    if (app_hdr.ih_magic != IMAGE_MAGIC || (app_hdr.ih_flags & IMAGE_F_NON_BOOTABLE)) {
-        goto err;
-    }
-
-    rc = bootutil_img_validate(NULL, 0, &app_hdr, primary_area, tmpbuf, BOOT_TMPBUF_SZ, NULL, 0, hash);
-    if (FIH_NOT_EQ(rc, FIH_SUCCESS)) {
-        goto err;
-    }
-
-    BOOT_LOG_INF("Image primary validation passed");
-
-    //----------------------------------------------------------------
-    BOOT_LOG_INF("Loading secondary image header...");
-    rc = boot_image_load_header(secondary_area, &app_hdr);
-    if (rc != 0) {
-        BOOT_LOG_ERR("Failed to load secondary image header!");
-        goto err;
-    }
-
-    if (app_hdr.ih_magic != IMAGE_MAGIC || (app_hdr.ih_flags & IMAGE_F_NON_BOOTABLE)) {
-        BOOT_LOG_ERR("Invalid image header!");
-        goto err;
-    }
-
-    rc = bootutil_img_validate(NULL, 0, &app_hdr, secondary_area, tmpbuf, BOOT_TMPBUF_SZ, NULL, 0, hash);
-    if (FIH_NOT_EQ(rc, FIH_SUCCESS)) {
-        BOOT_LOG_ERR("Image validation failed!");
-        goto err;
-    }
-
-    BOOT_LOG_INF("Image validation passed, copying to primary slot...");
+    // Copy Image
+    BOOT_LOG_INF("Copying secondary image to primary slot...");
     rc = simple_image_copy(primary_area, secondary_area, tmpbuf, BOOT_TMPBUF_SZ);
     if (rc != 0) {
+        BOOT_LOG_ERR("Failed to copy image!");
         goto err;
     }
 
-    // rc = boot_set_confirmed();
-    // if (rc != 0) {
-    //     BOOT_LOG_ERR("Failed to confirm the new image!");
-    //     goto err;
-    // }
-
-    //-------- Check image after copy --------------------------------------------------------
-    BOOT_LOG_INF("Primary copy check...");
-    rc = boot_image_load_header(primary_area, &app_hdr);
-    if (rc != 0) {
+    // Confirm Copy
+    BOOT_LOG_INF("Confirming new image...");
+    if(validate_image(primary_area, tmpbuf, BOOT_TMPBUF_SZ) != 0) {
+        BOOT_LOG_ERR("Confirming validation failed!");
         goto err;
     }
-
-    if (app_hdr.ih_magic != IMAGE_MAGIC || (app_hdr.ih_flags & IMAGE_F_NON_BOOTABLE)) {
-        goto err;
-    }
-
-    rc = bootutil_img_validate(NULL, 0, &app_hdr, primary_area, tmpbuf, BOOT_TMPBUF_SZ, NULL, 0, hash);
-    if (FIH_NOT_EQ(rc, FIH_SUCCESS)) {
-        goto err;
-    }
-
-    BOOT_LOG_INF("Primary copy check passed");
 
     FIH_SET(fih_rc, FIH_SUCCESS);
 err:
@@ -3501,55 +3472,46 @@ err:
     return fih_rc;
 }
 
-fih_ret
-context_boot_go_ospi(struct boot_rsp *rsp, uint8_t pri_image_id, uint8_t sec_image_id)
-{
-    const struct flash_area *primary_area;
-    const struct flash_area *secondary_area;
-    
-    static struct image_header header = {0};
 
+fih_ret context_boot_go_ospi(struct boot_rsp *rsp, uint8_t pri_image_id, uint8_t sec_image_id) {
+    const struct flash_area *primary_area, *secondary_area;
+    static struct image_header header;
     int rc = -1;
     FIH_DECLARE(fih_rc, FIH_FAILURE);
 
+    // Open Flash Areas
     BOOT_LOG_INF("Opening flash areas...");
     rc = flash_area_open(pri_image_id, &primary_area);
     if (rc != 0) {
         BOOT_LOG_ERR("Failed to open primary slot!");
-        FIH_SET(fih_rc, FIH_FAILURE);
         return fih_rc;
     }
 
     rc = flash_area_open(sec_image_id, &secondary_area);
     if (rc != 0) {
-        BOOT_LOG_ERR("Failed to open secondary OSPI slot!");
+        BOOT_LOG_ERR("Failed to open secondary slot!");
         flash_area_close(primary_area);
-        FIH_SET(fih_rc, FIH_FAILURE);
         return fih_rc;
     }
 
+    // Validate and Overwrite
     FIH_CALL(validate_and_overwrite_image, fih_rc, primary_area, secondary_area);
     if (FIH_NOT_EQ(fih_rc, FIH_SUCCESS)) {
         BOOT_LOG_ERR("Validation or overwrite failed!");
-        flash_area_close(primary_area);
-        flash_area_close(secondary_area);
-        return fih_rc;
+        goto cleanup;
     }
 
-    // Закрываем области памяти после завершения работы
-    flash_area_close(primary_area);
-    flash_area_close(secondary_area);
-
-    // Логируем успешную замену образа
-    BOOT_LOG_INF("Image validation and overwrite complete!");
-
-    // rsp->br_flash_dev_id = primary_area->fa_dev_id;
     rsp->br_image_off = primary_area->fa_off;
     rsp->br_hdr = &header;
 
     FIH_SET(fih_rc, FIH_SUCCESS);
+
+cleanup:
+    flash_area_close(primary_area);
+    flash_area_close(secondary_area);
     return fih_rc;
 }
+
 
 /**
  * Prepares the booting process, considering only a single image. This function
