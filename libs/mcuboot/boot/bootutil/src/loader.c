@@ -760,7 +760,6 @@ boot_validate_slot(struct boot_loader_state *state, int slot,
          * is erased.
          */
         if (slot != BOOT_PRIMARY_SLOT) {
-BOOT_LOG_INF("-->>boot_validate_slot: swap_erase_trailer_sectors");
             swap_erase_trailer_sectors(state, fap);
         }
 #endif
@@ -773,7 +772,6 @@ BOOT_LOG_INF("-->>boot_validate_slot: swap_erase_trailer_sectors");
 #if defined(MCUBOOT_OVERWRITE_ONLY) && defined(MCUBOOT_DOWNGRADE_PREVENTION)
     if (slot != BOOT_PRIMARY_SLOT) {
         /* Check if version of secondary slot is sufficient */
-BOOT_LOG_INF("-->>boot_validate_slot: boot_version_cmp");
         rc = boot_version_cmp(
                 &boot_img_hdr(state, BOOT_SECONDARY_SLOT)->ih_ver,
                 &boot_img_hdr(state, BOOT_PRIMARY_SLOT)->ih_ver);
@@ -788,11 +786,9 @@ BOOT_LOG_INF("-->>boot_validate_slot: boot_version_cmp");
         }
     }
 #endif
-BOOT_LOG_INF("-->>boot_validate_slot: boot_image_check");
     BOOT_HOOK_CALL_FIH(boot_image_check_hook, FIH_BOOT_HOOK_REGULAR,
                        fih_rc, BOOT_CURR_IMG(state), slot);
 
-BOOT_LOG_INF("-->>boot_validate_slot: boot_image_check done");
     if (FIH_EQ(fih_rc, FIH_BOOT_HOOK_REGULAR))
     {
         FIH_CALL(boot_image_check, fih_rc, state, hdr, fap, bs);
@@ -800,7 +796,6 @@ BOOT_LOG_INF("-->>boot_validate_slot: boot_image_check done");
 
     if (!boot_is_header_valid(hdr, fap) || FIH_NOT_EQ(fih_rc, FIH_SUCCESS)) {
         if ((slot != BOOT_PRIMARY_SLOT) || ARE_SLOTS_EQUIVALENT()) {
-BOOT_LOG_INF("-->>boot_validate_slot: boot_is_header_valid");
             flash_area_erase(fap, 0, flash_area_get_size(fap));
             /* Image is invalid, erase it to prevent further unnecessary
              * attempts to validate and boot it.
@@ -820,21 +815,18 @@ BOOT_LOG_INF("-->>boot_validate_slot: boot_is_header_valid");
      * overwriting an application written to the incorrect slot.
      * This feature is only supported by ARM platforms.
      */
-BOOT_LOG_INF("-->>boot_validate_slot: boot_verify_reset_address");
     if (area_id == FLASH_AREA_IMAGE_SECONDARY(BOOT_CURR_IMG(state))) {
         const struct flash_area *pri_fa = BOOT_IMG_AREA(state, BOOT_PRIMARY_SLOT);
         struct image_header *secondary_hdr = boot_img_hdr(state, slot);
         uint32_t reset_value = 0;
         uint32_t reset_addr = secondary_hdr->ih_hdr_size + sizeof(reset_value);
 
-BOOT_LOG_INF("-->>boot_validate_slot: flash_area_read");
         rc = flash_area_read(fap, reset_addr, &reset_value, sizeof(reset_value));
         if (rc != 0) {
             fih_rc = FIH_NO_BOOTABLE_IMAGE;
             goto out;
         }
 
-BOOT_LOG_INF("-->>boot_validate_slot: reset_value=%d, pri_fa->fa_off=%d, pri_fa->fa_size=%d", reset_value, pri_fa->fa_off, pri_fa->fa_size);
         if (reset_value < pri_fa->fa_off || reset_value> (pri_fa->fa_off + pri_fa->fa_size)) {
             BOOT_LOG_ERR("Reset address of image in secondary slot is not in the primary slot");
             BOOT_LOG_ERR("Erasing image from secondary slot");
@@ -853,7 +845,6 @@ BOOT_LOG_INF("-->>boot_validate_slot: reset_value=%d, pri_fa->fa_off=%d, pri_fa-
 #endif
 
 out:
-BOOT_LOG_INF("-->>boot_validate_slot: done");
     flash_area_close(fap);
 
     FIH_RET(fih_rc);

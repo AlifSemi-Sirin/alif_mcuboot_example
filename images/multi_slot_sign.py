@@ -2,29 +2,27 @@ import subprocess
 import os
 import argparse
 
-# python3 multi_slot_sign.py ethos-u-alif_kws.bin ethos-u-alif_kws.bin  --versions 1.4.2 1.4.3 --merged_output ccc_merged.bin
-# python3 multi_slot_sign.py ethos-u-alif_kws.bin ethos-u-alif_kws.bin ethos-u-alif_obj_detection.bin ethos-u-alif_obj_detection.bin  --versions 1.5.1 1.5.2 1.5.3 1.5.4 --merged_output ccc_merged.bin
-
 # Signing parameters
 MCUBOOT_DIR = "/home/michael/Alif/alif_mcuboot_example/libs/mcuboot"  # Path to MCUBoot directory
 IMGTOOL_PATH = os.path.join(MCUBOOT_DIR, "scripts", "imgtool.py")
 KEY_PATH = os.path.join(MCUBOOT_DIR, "root-rsa-2048.pem")
-START_ADDRESS = 0x00000000  # Start address 0for the first slot
 HEADER_SIZE = 0x800  # Header size
 ALIGN = 16  # Alignment
+EXTRA_SPACE = 32 * 1024  # 32 KB additional space per slot
+ALIGNMENT_BOUNDARY = 32  # 32-byte alignment
 
-SLOT_SIZE = (1536 * 1024)  # Slot size (1.5 MB)
+
+def align_size(size, alignment):
+    """
+    Aligns the size to the specified boundary.
+    """
+    return (size + alignment - 1) & ~(alignment - 1)
+
 
 def sign_binary(input_file, output_file, slot_size, version, ram_load_addition=""):
     """
     Signs the given binary file and generates a signed output file.
-    :param input_file: Path to the input binary file
-    :param output_file: Path to the signed output binary file
-    :param slot_size: Size of the slot to ensure the binary fits
-    :param version: Firmware version for the image
-    :param ram_load_addition: Additional RAM load parameter for imgtool
     """
-    # Check if required files exist
     if not os.path.exists(IMGTOOL_PATH):
         raise FileNotFoundError(f"Imgtool not found at {IMGTOOL_PATH}")
     if not os.path.exists(KEY_PATH):
@@ -32,11 +30,9 @@ def sign_binary(input_file, output_file, slot_size, version, ram_load_addition="
     if not os.path.exists(input_file):
         raise FileNotFoundError(f"Input binary file not found: {input_file}")
 
-    # Check binary size
     if os.path.getsize(input_file) > slot_size:
         raise ValueError(f"Input file {input_file} exceeds slot size of {slot_size} bytes")
 
-    # Build the command
     command = [
         "python", IMGTOOL_PATH,
         "sign",
@@ -48,14 +44,11 @@ def sign_binary(input_file, output_file, slot_size, version, ram_load_addition="
         "--slot-size", hex(slot_size),
     ]
 
-    # Add RAM load addition if specified
     if ram_load_addition:
         command.extend(["--load-addr", ram_load_addition])
 
-    # Add input and output file paths
     command.extend([input_file, output_file])
 
-    # Execute the command
     try:
         print(f"Signing {input_file} -> {output_file} {command}...")
         subprocess.run(command, check=True)
@@ -64,29 +57,31 @@ def sign_binary(input_file, output_file, slot_size, version, ram_load_addition="
         print(f"Error signing file: {e}")
         raise
 
-def merge_binaries(output_file, signed_files):
+
+def merge_binaries(output_file, signed_files, slot_sizes):
     """
-    Merges signed binaries into a single binary file, filling gaps with 0xFF.
-    :param output_file: Path to the final merged binary file.
-    :param signed_files: List of paths to signed binary files.
+    Merges signed binaries into a single binary file with dynamic slot sizes.
     """
     with open(output_file, 'wb') as merged:
+        offset = 0
         for index, file in enumerate(signed_files):
-            # Calculate start address for the slot
-            start_address = index * SLOT_SIZE
+            slot_size = slot_sizes[index]
 
-            # Fill gaps with 0xFF
-            merged.seek(start_address)
+            # Seek to the correct offset and write the file
+            merged.seek(offset)
             with open(file, 'rb') as f:
                 data = f.read()
                 merged.write(data)
 
-            # Fill remaining space in the slot with 0xFF
-            remaining_size = SLOT_SIZE - len(data)
+            # Fill the rest of the slot with 0xFF
+            remaining_size = slot_size - len(data)
             merged.write(b'\xFF' * remaining_size)
 
+            # Update offset for next slot
+            offset += slot_size
+
+
 if __name__ == "__main__":
-    # Argument parser
     parser = argparse.ArgumentParser(description="Sign and merge multiple binary files using MCUBoot imgtool.")
     parser.add_argument("input_files", nargs='+', help="Paths to input binary files to be signed.")
     parser.add_argument(
@@ -112,25 +107,33 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Validate input
     if len(args.input_files) != len(args.versions):
         raise ValueError("Number of input files must match number of versions.")
 
-    # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
 
     signed_files = []
+    slot_sizes = []
+    offset = 0
 
-    # Process each input file
     for index, input_file in enumerate(args.input_files):
         output_file = os.path.join(args.output_dir, f"signed_output_{index + 1}.bin")
-        ram_load_address = hex(START_ADDRESS + index * SLOT_SIZE)  # Calculate start address for each slot
+
+        # Calculate slot size with alignment and additional space
+        file_size = os.path.getsize(input_file)
+        aligned_size = align_size(file_size + EXTRA_SPACE, ALIGNMENT_BOUNDARY)
+        slot_sizes.append(aligned_size)
+
+        ram_load_address = hex(offset)
+
         try:
-            sign_binary(input_file, output_file, SLOT_SIZE, args.versions[index], ram_load_address)
+            sign_binary(input_file, output_file, aligned_size, args.versions[index], ram_load_address)
             signed_files.append(output_file)
         except Exception as e:
             print(f"Failed to process {input_file}: {e}")
 
-    # Merge signed binaries into a single output file
-    merge_binaries(args.merged_output, signed_files)
+        offset += aligned_size
+
+    # Merge all signed binaries into one
+    merge_binaries(args.merged_output, signed_files, slot_sizes)
     print(f"Merged binary created: {args.merged_output}")

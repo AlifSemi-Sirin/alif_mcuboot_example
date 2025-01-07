@@ -88,7 +88,7 @@ static mhu_driver_out_t mhu_driver_out;
 
 static uint32_t se_services_s_handle;
 
-struct image_dependency versions[MAX_OSPI_IMAGES + 1];
+struct image_header versions[MAX_OSPI_IMAGES + 1];
 extern fih_ret context_boot_go_ospi(struct boot_rsp *rsp, uint8_t pri_image_id, uint8_t sec_image_id);
 extern int flash_area_add_ospi_to_flash_map(struct flash_area *new_area);
 
@@ -308,6 +308,40 @@ void ospi_reset(void) {
     OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_HIGH);
 }
 
+
+static int read_single_image_state(int id, uint8_t* update_available, struct image_header *hdr)
+{
+    const struct flash_area* fa;
+
+    int err = flash_area_open(id, &fa);
+    if (err != 0) {
+        return -1;
+    }
+
+    printf("  offset:    0x%lX\n", fa->fa_off);
+    printf("  size:      0x%lX\n", fa->fa_size);
+
+    err = boot_image_load_header(fa, hdr);
+    if(!err) {
+        printf("    hdr hdr size:   %d\n", (int)hdr->ih_hdr_size);
+        printf("    hdr img size:   %d\n", (int)hdr->ih_img_size);
+        printf("    hdr version:   %u.%u.%u\n", 
+               hdr->ih_ver.iv_major, hdr->ih_ver.iv_minor, hdr->ih_ver.iv_revision);
+        if (update_available != NULL) {
+            *update_available = 1;
+        }
+
+        if (hdr != NULL) {
+            hdr->ih_ver.iv_build_num = id;      // here we assume that the build number is the image id
+        }
+    }
+    printf("  ===============\n");
+
+    flash_area_close(fa);
+    return err;
+}
+
+
 void init_ospi_flash_areas(void)
 {
     for (int i = 0; i < MAX_OSPI_IMAGES; i++) {
@@ -318,53 +352,38 @@ void init_ospi_flash_areas(void)
     }
 }
 
-static int read_single_image_state(int id, uint8_t* update_available, struct image_dependency *ver)
+#define SLOT_ALIGNMENT 32         // Alignment to 32 bytes
+#define SLOT_PADDING   0x8000     // 32 KB additional padding
+
+void update_ospi_flash_areas(void)
 {
-    const struct flash_area* fa;
-    int err = flash_area_open(id, &fa);
-    if (err != 0) {
-        return -1;
-    }
+    size_t image_offset = OSPI_START;  
+    int ret;
+    struct image_header image_info;
+    uint8_t update_available = 0;
 
-    printf("  offset:    0x%lX\n", fa->fa_off);
-    printf("  size:      0x%lX\n", fa->fa_size);
+    printf("Initializing OSPI flash areas dynamically...\n");
 
-    struct boot_swap_state sstate;
+    for (int i = 0; i < MAX_OSPI_IMAGES; i++) {
+         ospi_flash_areas[i].fa_off = image_offset; 
 
-    err = boot_read_swap_state(fa, &sstate);
-    if(err != 0) {
-        printf("boot_read_swap_state error: %d\n", err);
-        return -1;
-    }
+        ret = read_single_image_state(FLASH_AREA_IMAGE_START_ID_OSPI + i, &update_available, &image_info);
 
-    printf("  magic:     %u\n", sstate.magic);
-    printf("  swap_type: %u\n", sstate.swap_type);
-    printf("  copy_done: %u\n", sstate.copy_done);
-    printf("  image_ok:  %u\n", sstate.image_ok);
-    printf("  image_num: %u\n", sstate.image_num);
-
-    struct image_header header;
-    err = boot_image_load_header(fa, &header);
-    if(!err) {
-        printf("version:   %u.%u.%u\n", 
-               header.ih_ver.iv_major, header.ih_ver.iv_minor, header.ih_ver.iv_revision);
-        if (update_available != NULL) {
-            *update_available = 1;
+        if (ret != 0) {
+            printf("No more valid images found at index %d\n", i);
+            break;
         }
 
-        if (ver != NULL) {
-            ver->image_min_version.iv_major = header.ih_ver.iv_major;
-            ver->image_min_version.iv_minor = header.ih_ver.iv_minor;
-            ver->image_min_version.iv_revision = header.ih_ver.iv_revision;
-            ver->image_min_version.iv_build_num = header.ih_ver.iv_build_num;
-            ver->image_id = id;
-        }
-    }
-    printf("  ===============\n");
+        size_t image_size = image_info.ih_img_size; 
+        size_t slot_size = ((image_size + SLOT_PADDING + SLOT_ALIGNMENT - 1) / SLOT_ALIGNMENT) * SLOT_ALIGNMENT; // Выравнивание и добавление отступа
 
-    flash_area_close(fa);
-    return err;
+        ospi_flash_areas[i].fa_size = slot_size;     // update size of image
+        image_offset += slot_size;
+    }
+
+    printf("OSPI flash areas initialized dynamically.\n");
 }
+
 
 static int uart_read_int(void) {
     char buffer[16]; 
@@ -388,20 +407,20 @@ static int uart_read_int(void) {
     return atoi(buffer);
 }
 
-static int display_menu_and_get_choice(int available_images, struct image_dependency *versions)
+static int display_menu_and_get_choice(int available_images, struct image_header *hdr)
 {
     int retval = 0;
     printf("\n==== Bootloader Menu ====\n");
 
     for (int i = 0; i < available_images; i++) {
-        printf("%d. Start %s Image v%d.%d.%d, build %d, slot-id %d\n", 
+        printf("%d. Start %s Image v%d.%d.%d, size %d, slot_id %d\n", 
                 i, 
                 i == 0 ? "Primary" : "Secondary",
-               (int)versions[i].image_min_version.iv_major, 
-               (int)versions[i].image_min_version.iv_minor, 
-               (int)versions[i].image_min_version.iv_revision, 
-               (int)versions[i].image_min_version.iv_build_num,
-               (int)versions[i].image_id);
+               (int)hdr[i].ih_ver.iv_major, 
+               (int)hdr[i].ih_ver.iv_minor, 
+               (int)hdr[i].ih_ver.iv_revision, 
+               (int)hdr[i].ih_img_size,
+               (int)hdr[i].ih_ver.iv_build_num);
     }
     printf("=========================\n");
 
@@ -467,7 +486,6 @@ int main(void)
     }
 
     // prepare OSPI images
-    init_ospi_flash_areas();
     ospi_reset();
 
     if(ospi_flash_init() == -1) {
@@ -475,9 +493,12 @@ int main(void)
     }
     
     // add OSPI images to the flash map structure
+    init_ospi_flash_areas();
     for(size_t i = 0; i < MAX_OSPI_IMAGES; i++) {
         flash_area_add_ospi_to_flash_map(&ospi_flash_areas[i]);
     }
+
+    update_ospi_flash_areas();
 
     printf("Bootloader M55-HE start...\n");
     
@@ -504,7 +525,7 @@ int main(void)
         printf("Booting Primary Slot\n");
     } else {
         printf("Booting OSPI Slot %d\n", choice);
-        ret = context_boot_go_ospi(&rsp, FLASH_AREA_IMAGE_0_PRIMARY, versions[choice].image_id);
+        ret = context_boot_go_ospi(&rsp, FLASH_AREA_IMAGE_0_PRIMARY, versions[choice].ih_ver.iv_build_num);
         if (ret < 0) {
             handle_error("Invalid image selection", ret);
         }    
