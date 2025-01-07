@@ -18,12 +18,13 @@
 #include "flash_map_mram.h"
 
 
+#define MAX_IMAGES 16
+
 #define MRAM_BASE                           0x80000000
 #define MRAM_WRITE_SIZE                     16
 #define MRAM_ERASE_VALUE                    0x0
 #define MRAM_ADDR_ALIGN_MASK                0xFFFFFFF0U
 
-#define OSPI_BASE                           0x00000000
 #define OSPI_ERASE_VALUE                    0xFF
 
 OspiDriver_t OSPI_Driver;
@@ -47,21 +48,6 @@ static struct flash_area primary_1 =
     .fa_size = BOOT_SLOT_SIZE
 };
 
-static struct flash_area ospi_flash_area_0 =
-{
-    .fa_id = FLASH_AREA_IMAGE_SECONDARY(0),
-    .fa_device_id = FLASH_DEVICE_OSPI,
-    .fa_off = OSPI_BASE,
-    .fa_size = BOOT_SLOT_SIZE
-};
-
-static struct flash_area ospi_flash_area_1 =
-{
-    .fa_id = FLASH_AREA_IMAGE_SECONDARY(1),
-    .fa_device_id = FLASH_DEVICE_OSPI,
-    .fa_off = OSPI_BASE + BOOT_SLOT_SIZE,
-    .fa_size = BOOT_SLOT_SIZE    
-};
 
 
 
@@ -98,12 +84,10 @@ static struct flash_area secondary_2 =
 };
 #endif
 
-struct flash_area *boot_area_descs[] =
+struct flash_area *boot_area_descs[MAX_IMAGES] =
 {
     &bootloader,
     &primary_1,
-    &ospi_flash_area_0,
-    &ospi_flash_area_1,
 #ifdef MCUBOOT_SWAP_USING_SCRATCH
     &scratch,
 #endif
@@ -483,5 +467,19 @@ int flash_area_id_from_image_slot(int slot)
     case 4: return FLASH_AREA_IMAGE_SCRATCH;
 #endif
     }
+    return -1;
+}
+
+int flash_area_add_ospi_to_flash_map(struct flash_area *new_area)
+{
+    for(size_t i = 0; i < MAX_IMAGES; i++)
+    {
+        if(boot_area_descs[i] == NULL)
+        {
+            boot_area_descs[i] = new_area;
+            return 0;
+        }
+    }
+
     return -1;
 }

@@ -3,6 +3,7 @@ import os
 import argparse
 
 # python3 multi_slot_sign.py ethos-u-alif_kws.bin ethos-u-alif_kws.bin  --versions 1.4.2 1.4.3 --merged_output ccc_merged.bin
+# python3 multi_slot_sign.py ethos-u-alif_kws.bin ethos-u-alif_kws.bin ethos-u-alif_obj_detection.bin ethos-u-alif_obj_detection.bin  --versions 1.5.1 1.5.2 1.5.3 1.5.4 --merged_output ccc_merged.bin
 
 # Signing parameters
 MCUBOOT_DIR = "/home/michael/Alif/alif_mcuboot_example/libs/mcuboot"  # Path to MCUBoot directory

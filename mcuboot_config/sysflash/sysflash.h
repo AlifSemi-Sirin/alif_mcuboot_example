@@ -20,11 +20,12 @@
 #define MRAM_SECTOR_SIZE                    1024
 #define OSPI_SECTOR_SIZE                    1024
 
+#define FLASH_AREA_IMAGE_START_ID_OSPI      10
+
 #define FLASH_AREA_BOOTLOADER               0
 #define FLASH_AREA_IMAGE_0_PRIMARY          1
 #define FLASH_AREA_IMAGE_0_SECONDARY        2
-#define FLASH_AREA_IMAGE_0_OSPI             10 
-#define FLASH_AREA_IMAGE_1_OSPI             11
+#define FLASH_AREA_IMAGE_0_OSPI             (FLASH_AREA_IMAGE_START_ID_OSPI + 0) 
 
 #if MCUBOOT_SWAP_USING_SCRATCH
 #define FLASH_AREA_IMAGE_SCRATCH            3
@@ -35,6 +36,7 @@
 #endif
 
 #define MRAM_START                          (0x80000000)
+#define OSPI_START                          (0x00000000)
 
 #define IMAGE_0_START                       (0x0)
 #define IMAGE_1_START                       (0x40000)
@@ -68,7 +70,6 @@
                                          FLASH_AREA_IMAGE_0_PRIMARY : \
                                          FLASH_SLOT_DOES_NOT_EXIST)
 #define FLASH_AREA_IMAGE_SECONDARY(x)  (((x) == 0) ? FLASH_AREA_IMAGE_0_OSPI : \
-                                        ((x) == 1) ? FLASH_AREA_IMAGE_1_OSPI : \
                                          FLASH_SLOT_DOES_NOT_EXIST)
 #elif MCUBOOT_IMAGE_NUMBER == 2
 #define FLASH_AREA_IMAGE_PRIMARY(x)    (((x) == 0) ?          \
@@ -76,7 +77,6 @@
                                          ((x) == 1) ? FLASH_AREA_IMAGE_1_PRIMARY : \
                                          FLASH_SLOT_DOES_NOT_EXIST)
 #define FLASH_AREA_IMAGE_SECONDARY(x)  (((x) == 0) ? FLASH_AREA_IMAGE_0_OSPI : \
-                                        ((x) == 1) ? FLASH_AREA_IMAGE_1_OSPI : \
                                          FLASH_SLOT_DOES_NOT_EXIST)
 
 #else
