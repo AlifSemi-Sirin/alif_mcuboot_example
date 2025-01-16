@@ -166,6 +166,7 @@ struct arm_vector_table {
 extern void clk_init(void);
 extern void flush_uart(void);
 extern int ospi_flash_init(void);
+extern int ospi_flash_deinit(void);
 
 
 // Overwrites the default MPU table from Alif CMSIS-dfp to make own execution area
@@ -352,8 +353,8 @@ void init_ospi_flash_areas(void)
     }
 }
 
-#define SLOT_ALIGNMENT 32         // Alignment to 32 bytes
-#define SLOT_PADDING   0x8000     // 32 KB additional padding
+#define SLOT_ALIGNMENT 256        // Alignment to 32 bytes (according to python script)
+#define SLOT_PADDING   32 * 1024     // xx KB additional padding (according to python script)
 
 void update_ospi_flash_areas(void)
 {
@@ -413,9 +414,9 @@ static int display_menu_and_get_choice(int available_images, struct image_header
     printf("\n==== Bootloader Menu ====\n");
 
     for (int i = 0; i < available_images; i++) {
-        printf("%d. Start %s Image v%d.%d.%d, size %d, slot_id %d\n", 
+        printf("%d. %s Image v%d.%d.%d, size %d, slot_id %d\n", 
                 i, 
-                i == 0 ? "Primary" : "Secondary",
+                i == 0 ? "Start Primary" : "Copy Secondary",
                (int)hdr[i].ih_ver.iv_major, 
                (int)hdr[i].ih_ver.iv_minor, 
                (int)hdr[i].ih_ver.iv_revision, 
@@ -541,8 +542,8 @@ int main(void)
     int rv = boot_go_for_image_id(&rsp, 0);
 #endif
 
-uint32_t strt_addr = rsp.br_hdr->ih_load_addr;
-strt_addr = 0;
+    uint32_t strt_addr = rsp.br_hdr->ih_load_addr;
+    strt_addr = 0;
 
     if (rv == 0)
     {
@@ -569,6 +570,14 @@ strt_addr = 0;
         }
         else {
             print_image_version(rsp.br_hdr);
+
+            // OSPI deinitialization
+            rv = ospi_flash_deinit();
+            if (rv != 0) {
+                printf("Failed to deinitialize OSPI flash.\n");
+                handle_error("Boot process failed", rv);
+            }
+
             uninit();
             
             jump_to_image(vt);

@@ -7,9 +7,9 @@ MCUBOOT_DIR = "/home/michael/Alif/alif_mcuboot_example/libs/mcuboot"  # Path to 
 IMGTOOL_PATH = os.path.join(MCUBOOT_DIR, "scripts", "imgtool.py")
 KEY_PATH = os.path.join(MCUBOOT_DIR, "root-rsa-2048.pem")
 HEADER_SIZE = 0x800  # Header size
-ALIGN = 16  # Alignment
+ALIGN = 32  # Alignment
 EXTRA_SPACE = 32 * 1024  # 32 KB additional space per slot
-ALIGNMENT_BOUNDARY = 32  # 32-byte alignment
+ALIGNMENT_BOUNDARY = 256  # 256-byte alignment
 
 
 def align_size(size, alignment):

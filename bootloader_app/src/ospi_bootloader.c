@@ -48,6 +48,37 @@ void dump_data(const char *msg, const uint8_t *data, uint32_t len)
     printf("\n");
 }
 
+
+/**
+ * @brief Deinitializes the OSPI flash memory.
+ *
+ * This function ensures proper cleanup of the OSPI flash memory by
+ * resetting related states, powering down the flash, and deinitializing the driver.
+ *
+ * @return int32_t Returns 0 on success, -1 on failure.
+ */
+int ospi_flash_deinit(void)
+{
+    int32_t ret;
+
+    // Power off the flash
+    ret = FlashDrv->PowerControl(ARM_POWER_OFF);
+    if (ret != ARM_DRIVER_OK) {
+        printf("Power down OSPI failed, error: %lx\n", ret);
+        return -1;
+    }
+
+    // Deinitialize the flash driver
+    ret = FlashDrv->Uninitialize();
+    if (ret != ARM_DRIVER_OK) {
+        printf("OSPI Flash: Deinitialization failed, error: %lx\n", ret);
+        return -1;
+    }
+
+    return 0;
+}
+
+
 static int32_t ospi_drv_init(void)
 {
     int32_t ret = FlashDrv->Initialize(NULL);
