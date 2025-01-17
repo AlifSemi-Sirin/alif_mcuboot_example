@@ -43,6 +43,7 @@ MEMORY
 {
   ITCM  (rwx) : ORIGIN = 0x00000000, LENGTH = 0x00040000
   DTCM  (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00040000
+  SRAM0 (rwx) : ORIGIN = 0x02000000, LENGTH = 0x00400000
   MRAM  (rx)  : ORIGIN = 0x80000000, LENGTH = 0x00010000
   
   /* debug mode */
@@ -214,6 +215,13 @@ SECTIONS
     __StackTop = .;
   } > DTCM
   PROVIDE(__stack = __StackTop);
+
+  .metadata_section (NOLOAD) : ALIGN(16)
+  {
+    __metadata_start__ = .;
+    *(.metadata)
+    __metadata_end__ = .;
+  } > SRAM0
 
   /* Check if data + heap + stack exceeds RAM limit */
   ASSERT(__StackLimit >= __HeapLimit, "region DTCM overflowed with stack")

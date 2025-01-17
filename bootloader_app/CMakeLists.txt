@@ -25,6 +25,8 @@ target_sources(${BL_APP_TARGET_HE} PRIVATE
     src/main_he.c
     src/uart_empty_fix.c
     src/ospi_bootloader.c
+    src/menu.c
+    src/metadata.c
     ${MCUBOOT_DIR}/boot/alif/keys.c
 )
 

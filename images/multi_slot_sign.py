@@ -1,6 +1,7 @@
 import subprocess
 import os
 import argparse
+import json
 
 # Signing parameters
 MCUBOOT_DIR = "/home/michael/Alif/alif_mcuboot_example/libs/mcuboot"  # Path to MCUBoot directory
@@ -57,28 +58,62 @@ def sign_binary(input_file, output_file, slot_size, version, ram_load_addition="
         print(f"Error signing file: {e}")
         raise
 
-
-def merge_binaries(output_file, signed_files, slot_sizes):
+def merge_binaries(output_file, signed_files, slot_sizes, metadata):
     """
-    Merges signed binaries into a single binary file with dynamic slot sizes.
+    Merges signed binaries into a single binary file with metadata appended.
     """
     with open(output_file, 'wb') as merged:
         offset = 0
         for index, file in enumerate(signed_files):
             slot_size = slot_sizes[index]
 
-            # Seek to the correct offset and write the file
+            # Запись бинарных данных в слот
             merged.seek(offset)
             with open(file, 'rb') as f:
                 data = f.read()
                 merged.write(data)
 
-            # Fill the rest of the slot with 0xFF
+            # Заполнение оставшегося места в слоте
             remaining_size = slot_size - len(data)
             merged.write(b'\xFF' * remaining_size)
 
-            # Update offset for next slot
+            # Обновление смещения
             offset += slot_size
+
+        # Добавление метаданных в конец
+        metadata_offset = align_size(offset, ALIGNMENT_BOUNDARY)
+        merged.seek(metadata_offset)
+        merged.write(metadata.encode('utf-8'))
+
+    print(f"Metadata appended at offset {metadata_offset}.")
+
+
+def generate_metadata(input_files, versions, comments):
+    """
+    Generates metadata content as a JSON string.
+    Ensures all slots are filled based on the number of input files and versions.
+    Missing comments are replaced with "No comments".
+    
+    :param input_files: List of input file paths.
+    :param versions: List of firmware versions.
+    :param comments: List of comments for each slot.
+    :return: JSON-formatted string containing metadata.
+    """
+    metadata = {"slots": []}
+
+    for index, (file, version) in enumerate(zip(input_files, versions)):
+        # Use the provided comment if available, otherwise use "No comments"
+        comment = comments[index] if index < len(comments) else "No comments"
+        sanitized_comment = comment.strip() if comment.strip() else "No comments"
+
+        metadata["slots"].append({
+            "slot_id": index + 1,
+            "file": os.path.basename(file),
+            "version": version,
+            "comment": sanitized_comment
+        })
+
+    return json.dumps(metadata, indent=4)
 
 
 if __name__ == "__main__":
@@ -133,7 +168,11 @@ if __name__ == "__main__":
             print(f"Failed to process {input_file}: {e}")
 
         offset += aligned_size
+    
+    # Generate metadata
+    comments = ["Primary firmware", "Secondary firmware", "Optional debug image"]
+    metadata = generate_metadata(args.input_files, args.versions, comments)
 
-    # Merge all signed binaries into one
-    merge_binaries(args.merged_output, signed_files, slot_sizes)
+    # Merge all signed binaries into one and append metadata
+    merge_binaries(args.merged_output, signed_files, slot_sizes, metadata)
     print(f"Merged binary created: {args.merged_output}")

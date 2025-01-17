@@ -27,14 +27,17 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <ctype.h>
 
 #include "mhu_driver.h"
+#include "metadata.h"
+#include "menu.h"
 
 #define MAX_OSPI_IMAGES 8
 
 #define IRQ_PRIORITY    10
 struct flash_area ospi_flash_areas[MAX_OSPI_IMAGES];
+__attribute__((section(".metadata"))) struct metadata_slot metadata[MAX_OSPI_IMAGES];
+
 
 #define OSPI_RESET_PORT LP
 #define OSPI_RESET_PIN 7
@@ -356,7 +359,7 @@ void init_ospi_flash_areas(void)
 #define SLOT_ALIGNMENT 256        // Alignment to 32 bytes (according to python script)
 #define SLOT_PADDING   32 * 1024     // xx KB additional padding (according to python script)
 
-void update_ospi_flash_areas(void)
+size_t update_ospi_flash_areas(void)
 {
     size_t image_offset = OSPI_START;  
     int ret;
@@ -383,55 +386,10 @@ void update_ospi_flash_areas(void)
     }
 
     printf("OSPI flash areas initialized dynamically.\n");
+    
+    return image_offset;
 }
 
-
-static int uart_read_int(void) {
-    char buffer[16]; 
-    unsigned int index = 0;
-    char ch;
-
-    // Read characters until newline ('\n')
-    while (1) {
-        receive_str(&ch, 1); // Receive one character at a time
-
-        if (ch == '\n' || ch == '\r') {
-            buffer[index] = '\0'; // Null-terminate the string
-            break;
-        }
-
-        if (isdigit(ch) && index < sizeof(buffer) - 1) {
-            buffer[index++] = ch;
-        }
-    }
-
-    return atoi(buffer);
-}
-
-static int display_menu_and_get_choice(int available_images, struct image_header *hdr)
-{
-    int retval = 0;
-    printf("\n==== Bootloader Menu ====\n");
-
-    for (int i = 0; i < available_images; i++) {
-        printf("%d. %s Image v%d.%d.%d, size %d, slot_id %d\n", 
-                i, 
-                i == 0 ? "Start Primary" : "Copy Secondary",
-               (int)hdr[i].ih_ver.iv_major, 
-               (int)hdr[i].ih_ver.iv_minor, 
-               (int)hdr[i].ih_ver.iv_revision, 
-               (int)hdr[i].ih_img_size,
-               (int)hdr[i].ih_ver.iv_build_num);
-    }
-    printf("=========================\n");
-
-    do {
-        printf("Enter your choice: \n");
-        retval = uart_read_int();
-    } while (retval >=available_images);  
-
-    return retval;
-}
 
 void print_image_version(const struct image_header *hdr) {
     // Don't use PRIu8 for printing as nano spec doesn't support that.
@@ -499,11 +457,12 @@ int main(void)
         flash_area_add_ospi_to_flash_map(&ospi_flash_areas[i]);
     }
 
-    update_ospi_flash_areas();
-
+    size_t metadata_offset = update_ospi_flash_areas();
+    
     printf("Bootloader M55-HE start...\n");
     
-    int choice, ret, idx = 0, image_id = FLASH_AREA_IMAGE_START_ID_OSPI;
+    int ret, idx = 0, image_id = FLASH_AREA_IMAGE_START_ID_OSPI;
+    int available_images = 0;
     struct boot_rsp rsp;
     uint8_t update_available = 0;
     
@@ -519,17 +478,27 @@ int main(void)
         }
         idx++;
     }
+    
+    available_images = idx;
 
-    choice = display_menu_and_get_choice(idx, versions);  
+    int num = get_metadata(metadata_offset, metadata, available_images);
+    if (num < 0) {
+        set_metadata_defaults(metadata, available_images);
+    }
+
+    uint8_t choice = display_menu_and_get_choice(metadata, versions, available_images);
+    printf("Selected slot: %d\n", choice);
 
     if (choice == 0) {
         printf("Booting Primary Slot\n");
-    } else {
+    } else if (choice < available_images) {
         printf("Booting OSPI Slot %d\n", choice);
         ret = context_boot_go_ospi(&rsp, FLASH_AREA_IMAGE_0_PRIMARY, versions[choice].ih_ver.iv_build_num);
         if (ret < 0) {
             handle_error("Invalid image selection", ret);
-        }    
+        } 
+    } else {
+        handle_error("Invalid image selection", -1);
     }
 
     struct arm_vector_table *vt;
