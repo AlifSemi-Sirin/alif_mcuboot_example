@@ -11,7 +11,7 @@ HEADER_SIZE = 0x800  # Header size
 ALIGN = 32  # Alignment
 EXTRA_SPACE = 32 * 1024  # 32 KB additional space per slot
 ALIGNMENT_BOUNDARY = 256  # 256-byte alignment
-
+MAX_STRING_LEN = 32  # Maximum length for strings in metadata
 
 def align_size(size, alignment):
     """
@@ -67,20 +67,20 @@ def merge_binaries(output_file, signed_files, slot_sizes, metadata):
         for index, file in enumerate(signed_files):
             slot_size = slot_sizes[index]
 
-            # Запись бинарных данных в слот
+            # Write binary data to the slot
             merged.seek(offset)
             with open(file, 'rb') as f:
                 data = f.read()
                 merged.write(data)
 
-            # Заполнение оставшегося места в слоте
+            # Fill remaining space in the slot
             remaining_size = slot_size - len(data)
             merged.write(b'\xFF' * remaining_size)
 
-            # Обновление смещения
+            # Update offset
             offset += slot_size
 
-        # Добавление метаданных в конец
+        # Append metadata as JSON
         metadata_offset = align_size(offset, ALIGNMENT_BOUNDARY)
         merged.seek(metadata_offset)
         merged.write(metadata.encode('utf-8'))
@@ -91,30 +91,32 @@ def merge_binaries(output_file, signed_files, slot_sizes, metadata):
 def generate_metadata(input_files, versions, comments):
     """
     Generates metadata content as a JSON string.
-    Ensures all slots are filled based on the number of input files and versions.
-    Missing comments are replaced with "No comments".
-    
     :param input_files: List of input file paths.
     :param versions: List of firmware versions.
     :param comments: List of comments for each slot.
     :return: JSON-formatted string containing metadata.
     """
     metadata = {"slots": []}
+    slot_id = 10
 
     for index, (file, version) in enumerate(zip(input_files, versions)):
+        # Get file size
+        img_size = os.path.getsize(file)
+
         # Use the provided comment if available, otherwise use "No comments"
         comment = comments[index] if index < len(comments) else "No comments"
-        sanitized_comment = comment.strip() if comment.strip() else "No comments"
 
         metadata["slots"].append({
-            "slot_id": index + 1,
+            "slot_id": slot_id,
             "file": os.path.basename(file),
+            "size": img_size,
             "version": version,
-            "comment": sanitized_comment
+            "comment": comment
         })
 
-    return json.dumps(metadata, indent=4)
+        slot_id += 1
 
+    return json.dumps(metadata, indent=4)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sign and merge multiple binary files using MCUBoot imgtool.")
@@ -122,7 +124,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--versions",
         nargs='+',
-        help="Firmware versions for each input file (e.g., '1.2.2 1.2.3')."
+        help="Firmware versions for each input file (e.g., '1.2.2 1.3.0')."
     )
     parser.add_argument(
         "--output_dir",

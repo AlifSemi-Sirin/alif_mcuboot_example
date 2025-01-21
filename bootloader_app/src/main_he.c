@@ -322,15 +322,15 @@ static int read_single_image_state(int id, uint8_t* update_available, struct ima
         return -1;
     }
 
-    printf("  offset:    0x%lX\n", fa->fa_off);
-    printf("  size:      0x%lX\n", fa->fa_size);
+    // printf("  offset:    0x%lX\n", fa->fa_off);
+    // printf("  size:      0x%lX\n", fa->fa_size);
 
     err = boot_image_load_header(fa, hdr);
     if(!err) {
-        printf("    hdr hdr size:   %d\n", (int)hdr->ih_hdr_size);
-        printf("    hdr img size:   %d\n", (int)hdr->ih_img_size);
-        printf("    hdr version:   %u.%u.%u\n", 
-               hdr->ih_ver.iv_major, hdr->ih_ver.iv_minor, hdr->ih_ver.iv_revision);
+        // printf("    hdr hdr size:   %d\n", (int)hdr->ih_hdr_size);
+        // printf("    hdr img size:   %d\n", (int)hdr->ih_img_size);
+        // printf("    hdr version:   %u.%u.%u\n", 
+        //        hdr->ih_ver.iv_major, hdr->ih_ver.iv_minor, hdr->ih_ver.iv_revision);
         if (update_available != NULL) {
             *update_available = 1;
         }
@@ -339,7 +339,6 @@ static int read_single_image_state(int id, uint8_t* update_available, struct ima
             hdr->ih_ver.iv_build_num = id;      // here we assume that the build number is the image id
         }
     }
-    printf("  ===============\n");
 
     flash_area_close(fa);
     return err;
@@ -374,7 +373,6 @@ size_t update_ospi_flash_areas(void)
         ret = read_single_image_state(FLASH_AREA_IMAGE_START_ID_OSPI + i, &update_available, &image_info);
 
         if (ret != 0) {
-            printf("No more valid images found at index %d\n", i);
             break;
         }
 
@@ -481,9 +479,9 @@ int main(void)
     
     available_images = idx;
 
-    int num = get_metadata(metadata_offset, metadata, available_images);
-    if (num < 0) {
-        set_metadata_defaults(metadata, available_images);
+    int slot_nums = get_metadata(metadata_offset, metadata, available_images);
+    if (slot_nums < 0) {
+        set_metadata_to_default(metadata, available_images);
     }
 
     uint8_t choice = display_menu_and_get_choice(metadata, versions, available_images);

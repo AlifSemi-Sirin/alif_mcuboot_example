@@ -6,6 +6,7 @@
 #include "menu.h"
 
 const char *not_found = "----";
+#define PRIMARY_SLOT_ID     1
 
 
 static int uart_read_int(void) {
@@ -33,26 +34,47 @@ static int uart_read_int(void) {
 
 /**
  * Searches for a file name and comment in the slots.
- * Returns the index of the slot if found, otherwise returns -1.
  */
-const char* metadata_get_filename(const struct metadata_slot *slots, uint8_t slot_count, uint8_t wanted_slot_id) {
+const char* get_metadata_filename(const struct metadata_slot *slots, uint8_t slot_count, const struct image_header *hdr) {
     for (size_t i = 0; i < slot_count; i++) {
-        if(slots[i].slot_id == wanted_slot_id) {
-            return slots[i].file_name;
+        // iv_build_num - contains slot_id !!!
+        if (hdr->ih_ver.iv_build_num == PRIMARY_SLOT_ID) {
+            if(hdr->ih_img_size == slots[i].size && 
+                hdr->ih_ver.iv_major == slots[i].ver_major &&
+                hdr->ih_ver.iv_minor == slots[i].ver_minor &&
+                hdr->ih_ver.iv_revision == slots[i].ver_revision) {
+                    return slots[i].file_name;
+            }
+        }
+        else {
+            if (hdr->ih_ver.iv_build_num == slots[i].id) {
+                return slots[i].file_name;
+            }
         }
     }
 
     return not_found;
 }
 
-const char* metadata_get_comment(const struct metadata_slot *slots, uint8_t slot_count, uint8_t wanted_slot_id) {
+const char* metadata_get_comment(const struct metadata_slot *slots, uint8_t slot_count, const struct image_header *hdr) {
     for (size_t i = 0; i < slot_count; i++) {
-        if(slots[i].slot_id == wanted_slot_id) {
-            return slots[i].comment;
+        // iv_build_num - contains slot_id !!!
+        if(hdr->ih_ver.iv_build_num == PRIMARY_SLOT_ID) {
+            if(hdr->ih_img_size == slots[i].size && 
+                hdr->ih_ver.iv_major == slots[i].ver_major &&
+                hdr->ih_ver.iv_minor == slots[i].ver_minor &&
+                hdr->ih_ver.iv_revision == slots[i].ver_revision) {
+                    return slots[i].comment;
+            }
+        }
+        else {
+            if(hdr->ih_ver.iv_build_num == slots[i].id) {
+                return slots[i].comment;
+            }
         }
     }
 
-    return not_found;
+    return not_found;    
 }
 
 /**
@@ -72,8 +94,8 @@ uint8_t display_menu_and_get_choice(const struct metadata_slot *slots, const str
                (int)hdr[i].ih_ver.iv_revision, 
                (int)hdr[i].ih_img_size,
                (int)hdr[i].ih_ver.iv_build_num,
-               metadata_get_filename(slots, slot_count, i),
-               metadata_get_comment(slots, slot_count, i));    
+               get_metadata_filename(slots, slot_count, &hdr[i]),
+               metadata_get_comment(slots, slot_count, &hdr[i]));    
     }
     printf("=========================\n");
 
