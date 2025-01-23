@@ -19,7 +19,6 @@ def align_size(size, alignment):
     """
     return (size + alignment - 1) & ~(alignment - 1)
 
-
 def sign_binary(input_file, output_file, slot_size, version, ram_load_addition=""):
     """
     Signs the given binary file and generates a signed output file.
@@ -87,7 +86,6 @@ def merge_binaries(output_file, signed_files, slot_sizes, metadata):
 
     print(f"Metadata appended at offset {metadata_offset}.")
 
-
 def generate_metadata(input_files, versions, comments):
     """
     Generates metadata content as a JSON string.
@@ -127,6 +125,11 @@ if __name__ == "__main__":
         help="Firmware versions for each input file (e.g., '1.2.2 1.3.0')."
     )
     parser.add_argument(
+        "--comments",
+        nargs='+',
+        help="Comments for each slot (e.g., 'Primary firmware' 'Secondary firmware')."
+    )
+    parser.add_argument(
         "--output_dir",
         default="signed_binaries",
         help="Directory to store signed binary files (default: signed_binaries)."
@@ -146,6 +149,10 @@ if __name__ == "__main__":
 
     if len(args.input_files) != len(args.versions):
         raise ValueError("Number of input files must match number of versions.")
+
+    # Ensure comments match the number of input files
+    if args.comments and len(args.comments) != len(args.input_files):
+        raise ValueError("Number of comments must match number of input files.")
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -170,9 +177,9 @@ if __name__ == "__main__":
             print(f"Failed to process {input_file}: {e}")
 
         offset += aligned_size
-    
+
     # Generate metadata
-    comments = ["Primary firmware", "Secondary firmware", "Optional debug image"]
+    comments = args.comments if args.comments else ["No comments" for _ in args.input_files]
     metadata = generate_metadata(args.input_files, args.versions, comments)
 
     # Merge all signed binaries into one and append metadata
