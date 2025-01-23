@@ -788,12 +788,10 @@ boot_validate_slot(struct boot_loader_state *state, int slot,
 #endif
     BOOT_HOOK_CALL_FIH(boot_image_check_hook, FIH_BOOT_HOOK_REGULAR,
                        fih_rc, BOOT_CURR_IMG(state), slot);
-
     if (FIH_EQ(fih_rc, FIH_BOOT_HOOK_REGULAR))
     {
         FIH_CALL(boot_image_check, fih_rc, state, hdr, fap, bs);
     }
-
     if (!boot_is_header_valid(hdr, fap) || FIH_NOT_EQ(fih_rc, FIH_SUCCESS)) {
         if ((slot != BOOT_PRIMARY_SLOT) || ARE_SLOTS_EQUIVALENT()) {
             flash_area_erase(fap, 0, flash_area_get_size(fap));
@@ -2068,7 +2066,6 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
          */
         for (slot = 0; slot < BOOT_NUM_SLOTS; slot++) {
             fa_id = flash_area_id_from_multi_image_slot(image_index, slot);
-
             rc = flash_area_open(fa_id, &BOOT_IMG_AREA(state, slot));
             assert(rc == 0);
 
@@ -2090,7 +2087,6 @@ context_boot_go(struct boot_loader_state *state, struct boot_rsp *rsp)
 #endif
 
         /* Determine swap type and complete swap if it has been aborted. */
-BOOT_LOG_INF("boot_prepare_image_for_update");        
         boot_prepare_image_for_update(state, &bs);
 
         if (BOOT_IS_UPGRADE(BOOT_SWAP_TYPE(state))) {
@@ -2103,7 +2099,6 @@ BOOT_LOG_INF("boot_prepare_image_for_update");
         /* Iterate over all the images and verify whether the image dependencies
          * are all satisfied and update swap type if necessary.
          */
-BOOT_LOG_INF("boot_verify_dependencies");        
         rc = boot_verify_dependencies(state);
         if (rc != 0) {
             /*
@@ -2118,14 +2113,12 @@ BOOT_LOG_INF("boot_verify_dependencies");
 #endif
 
     /* Trigger status change callback with upgrading status */
-BOOT_LOG_INF("mcuboot_status_change");
     mcuboot_status_change(MCUBOOT_STATUS_UPGRADING);
 
     /* Iterate over all the images. At this point there are no aborted swaps
      * and the swap types are determined for each image. By the end of the loop
      * all required update operations will have been finished.
      */
-BOOT_LOG_INF("boot_perform_update");
     IMAGES_ITER(BOOT_CURR_IMG(state)) {
 #if (BOOT_IMAGE_NUMBER > 1)
         if (state->img_mask[BOOT_CURR_IMG(state)]) {
@@ -2137,19 +2130,16 @@ BOOT_LOG_INF("boot_perform_update");
          * another images). Therefore, mark them as invalid to force their reload
          * by boot_enc_load().
          */
-BOOT_LOG_INF("boot_enc_zeroize");
         boot_enc_zeroize(BOOT_CURR_ENC(state));
 #endif /* MCUBOOT_ENC_IMAGES */
 
         /* Indicate that swap is not aborted */
-BOOT_LOG_INF("boot_status_reset");        
         boot_status_reset(&bs);
 #endif /* (BOOT_IMAGE_NUMBER > 1) */
 
         /* Set the previously determined swap type */
         bs.swap_type = BOOT_SWAP_TYPE(state);
 
-BOOT_LOG_INF("boot_swap_type %x", bs.swap_type);
         switch (BOOT_SWAP_TYPE(state)) {
         case BOOT_SWAP_TYPE_NONE:
             break;
@@ -2192,7 +2182,6 @@ BOOT_LOG_INF("boot_swap_type %x", bs.swap_type);
             BOOT_SWAP_TYPE(state) = BOOT_SWAP_TYPE_PANIC;
         }
 
-BOOT_LOG_INF("BOOT_SWAP_TYPE(state): %d", BOOT_SWAP_TYPE(state));
         if (BOOT_SWAP_TYPE(state) == BOOT_SWAP_TYPE_PANIC) {
             BOOT_LOG_ERR("panic!");
             assert(0);
@@ -2207,7 +2196,6 @@ BOOT_LOG_INF("BOOT_SWAP_TYPE(state): %d", BOOT_SWAP_TYPE(state));
      * have been re-validated.
      */
     FIH_SET(fih_cnt, 0);
-BOOT_LOG_INF("BOOT_IMAGE_NUMBER: %d", BOOT_IMAGE_NUMBER);    
     IMAGES_ITER(BOOT_CURR_IMG(state)) {
 #if BOOT_IMAGE_NUMBER > 1
         /* Hardenned to prevent from skipping check of a given image,
@@ -2220,7 +2208,6 @@ BOOT_LOG_INF("BOOT_IMAGE_NUMBER: %d", BOOT_IMAGE_NUMBER);
             continue;
         }
 #endif
-BOOT_LOG_INF("BOOT_SWAP_TYPE(state): %d", BOOT_SWAP_TYPE(state));
         if (BOOT_SWAP_TYPE(state) != BOOT_SWAP_TYPE_NONE) {
             /* Attempt to read an image header from each slot. Ensure that image
              * headers in slots are aligned with headers in boot_data.
@@ -2238,9 +2225,7 @@ BOOT_LOG_INF("BOOT_SWAP_TYPE(state): %d", BOOT_SWAP_TYPE(state));
         }
 
 #ifdef MCUBOOT_VALIDATE_PRIMARY_SLOT
-BOOT_LOG_INF("boot_validate_slot1 %x", fih_rc);
         FIH_CALL(boot_validate_slot, fih_rc, state, BOOT_PRIMARY_SLOT, NULL);
-BOOT_LOG_INF("boot_validate_slot2 %x", fih_rc);
         /* Check for all possible values is redundant in normal operation it
          * is meant to prevent FI attack.
          */
@@ -2255,7 +2240,6 @@ BOOT_LOG_INF("boot_validate_slot2 %x", fih_rc);
          * onto an empty flash chip. At least do a basic sanity check that
          * the magic number on the image is OK.
          */
-BOOT_LOG_INF("BOOT_IMG(state, BOOT_PRIMARY_SLOT).hdr.ih_magic: %lx, IMAGE_MAGIC: %lx", (unsigned long)BOOT_IMG(state, BOOT_PRIMARY_SLOT).hdr.ih_magic, (unsigned long)IMAGE_MAGIC);        
         if (BOOT_IMG(state, BOOT_PRIMARY_SLOT).hdr.ih_magic != IMAGE_MAGIC) {
             BOOT_LOG_ERR("bad image magic 0x%lx; Image=%u", (unsigned long)
                          BOOT_IMG(state, BOOT_PRIMARY_SLOT).hdr.ih_magic,
@@ -2266,14 +2250,12 @@ BOOT_LOG_INF("BOOT_IMG(state, BOOT_PRIMARY_SLOT).hdr.ih_magic: %lx, IMAGE_MAGIC:
         }
 #endif /* MCUBOOT_VALIDATE_PRIMARY_SLOT */
 
-BOOT_LOG_INF("boot_update_hw_rollback_protection");
         rc = boot_update_hw_rollback_protection(state);
         if (rc != 0) {
             FIH_SET(fih_rc, FIH_FAILURE);
             goto out;
         }
 
-BOOT_LOG_INF("boot_add_shared_data");
         rc = boot_add_shared_data(state, BOOT_PRIMARY_SLOT);
         if (rc != 0) {
             FIH_SET(fih_rc, FIH_FAILURE);
@@ -2286,7 +2268,6 @@ BOOT_LOG_INF("boot_add_shared_data");
      * If this is not the case, at least one iteration of the loop
      * has been skipped.
      */
-BOOT_LOG_INF("fih_cnt: %d, BOOT_IMAGE_NUMBER: %d", fih_cnt, BOOT_IMAGE_NUMBER);
     if(FIH_NOT_EQ(fih_cnt, BOOT_IMAGE_NUMBER)) {
         FIH_PANIC;
     }
@@ -2306,9 +2287,7 @@ out:
     memset(&bs, 0, sizeof(struct boot_status));
 #endif
 
-BOOT_LOG_INF("context_boot_go done");
     close_all_flash_areas(state);
-BOOT_LOG_INF("close_all_flash_areas done, returning %d", fih_rc);    
     FIH_RET(fih_rc);
 }
 

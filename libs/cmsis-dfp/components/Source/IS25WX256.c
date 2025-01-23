@@ -25,7 +25,7 @@
 #include "Driver_OSPI.h"
 #include "RTE_Device.h"
 #include "RTE_Components.h"
-#include "IS25WX256_mod.h"
+#include "IS25WX256.h"
 #include CMSIS_device_header
 
 #if !(RTE_ISSI_FLASH)

@@ -16,7 +16,7 @@
     },
     "HE_PRI": {
         "disabled": false,
-        "binary": "alif-primary-app.bin",
+        "binary": "alif-example-app_signed.bin",
         "version": "1.0.0",
         "signed": false,
         "mramAddress": "0x80010000",

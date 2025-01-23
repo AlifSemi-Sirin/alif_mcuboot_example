@@ -21,29 +21,12 @@
 #include "Driver_HWSEM.h"
 #include "services_lib_bare_metal.h"
 
-#include "Driver_GPIO.h"
 #include "RTE_Components.h"
 #include CMSIS_device_header
 
 #include <stdio.h>
-#include <stdlib.h>
 
 #include "mhu_driver.h"
-#include "metadata.h"
-#include "menu.h"
-
-#define MAX_OSPI_IMAGES 8
-
-#define IRQ_PRIORITY    10
-struct flash_area ospi_flash_areas[MAX_OSPI_IMAGES];
-__attribute__((section(".metadata"))) struct metadata_slot metadata[MAX_OSPI_IMAGES];
-
-
-#define OSPI_RESET_PORT LP
-#define OSPI_RESET_PIN 7
-extern ARM_DRIVER_GPIO Driver_GPIOLP;
-static ARM_DRIVER_GPIO *OSPI_GPIODrv = &ARM_Driver_GPIO_(OSPI_RESET_PORT);
-
 
 #define SHUTDOWN_MESSAGE 0xDEADBEEF
 
@@ -90,11 +73,6 @@ static mhu_driver_in_t  mhu_driver_in = {
 static mhu_driver_out_t mhu_driver_out;
 
 static uint32_t se_services_s_handle;
-
-struct image_header versions[MAX_OSPI_IMAGES + 1];
-extern fih_ret context_boot_go_ospi(struct boot_rsp *rsp, uint8_t pri_image_id, uint8_t sec_image_id);
-extern int flash_area_add_ospi_to_flash_map(struct flash_area *new_area);
-
 
 void MHU_RTSS_S_TX_IRQHandler(void)
 {
@@ -168,8 +146,6 @@ struct arm_vector_table {
 
 extern void clk_init(void);
 extern void flush_uart(void);
-extern int ospi_flash_init(void);
-extern int ospi_flash_deinit(void);
 
 
 // Overwrites the default MPU table from Alif CMSIS-dfp to make own execution area
@@ -240,13 +216,6 @@ void MPU_Load_Regions(void)
     ARM_MPU_Load(0, mpu_table, sizeof(mpu_table)/sizeof(ARM_MPU_Region_t));
 }
 
-
-void handle_error(const char *message, int code) {
-    printf("ERROR: %s (code: %d)\n", message, code);
-    while(1) __WFE();
-}
-
-
 void hw_init(void)
 {
 
@@ -299,119 +268,6 @@ void uninit()
     hw_uninit();
 }
 
-
-static void configure_irq(IRQn_Type irq, uint32_t priority) {
-    NVIC_DisableIRQ(irq);
-    NVIC_ClearPendingIRQ(irq);
-    NVIC_SetPriority(irq, priority);
-    NVIC_EnableIRQ(irq);
-}
-
-void ospi_reset(void) {
-    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_LOW);
-    OSPI_GPIODrv->SetValue(OSPI_RESET_PIN, GPIO_PIN_OUTPUT_STATE_HIGH);
-}
-
-
-static int read_single_image_state(int id, uint8_t* update_available, struct image_header *hdr)
-{
-    const struct flash_area* fa;
-
-    int err = flash_area_open(id, &fa);
-    if (err != 0) {
-        return -1;
-    }
-
-    // printf("  offset:    0x%lX\n", fa->fa_off);
-    // printf("  size:      0x%lX\n", fa->fa_size);
-
-    err = boot_image_load_header(fa, hdr);
-    if(!err) {
-        // printf("    hdr hdr size:   %d\n", (int)hdr->ih_hdr_size);
-        // printf("    hdr img size:   %d\n", (int)hdr->ih_img_size);
-        // printf("    hdr version:   %u.%u.%u\n", 
-        //        hdr->ih_ver.iv_major, hdr->ih_ver.iv_minor, hdr->ih_ver.iv_revision);
-        if (update_available != NULL) {
-            *update_available = 1;
-        }
-
-        if (hdr != NULL) {
-            hdr->ih_ver.iv_build_num = id;      // here we assume that the build number is the image id
-        }
-    }
-
-    flash_area_close(fa);
-    return err;
-}
-
-
-void init_ospi_flash_areas(void)
-{
-    for (int i = 0; i < MAX_OSPI_IMAGES; i++) {
-        ospi_flash_areas[i].fa_id = (FLASH_AREA_IMAGE_START_ID_OSPI + i);
-        ospi_flash_areas[i].fa_device_id = FLASH_DEVICE_OSPI;
-        ospi_flash_areas[i].fa_off = OSPI_START + (i * BOOT_SLOT_SIZE);
-        ospi_flash_areas[i].fa_size = BOOT_SLOT_SIZE;
-    }
-}
-
-#define SLOT_ALIGNMENT 256        // Alignment to 32 bytes (according to python script)
-#define SLOT_PADDING   32 * 1024     // xx KB additional padding (according to python script)
-
-size_t update_ospi_flash_areas(void)
-{
-    size_t image_offset = OSPI_START;  
-    int ret;
-    struct image_header image_info;
-    uint8_t update_available = 0;
-
-    printf("Initializing OSPI flash areas dynamically...\n");
-
-    for (int i = 0; i < MAX_OSPI_IMAGES; i++) {
-         ospi_flash_areas[i].fa_off = image_offset; 
-
-        ret = read_single_image_state(FLASH_AREA_IMAGE_START_ID_OSPI + i, &update_available, &image_info);
-
-        if (ret != 0) {
-            break;
-        }
-
-        size_t image_size = image_info.ih_img_size; 
-        size_t slot_size = ((image_size + SLOT_PADDING + SLOT_ALIGNMENT - 1) / SLOT_ALIGNMENT) * SLOT_ALIGNMENT; // Выравнивание и добавление отступа
-
-        ospi_flash_areas[i].fa_size = slot_size;     // update size of image
-        image_offset += slot_size;
-    }
-
-    printf("OSPI flash areas initialized dynamically.\n");
-    
-    return image_offset;
-}
-
-
-void print_image_version(const struct image_header *hdr) {
-    // Don't use PRIu8 for printing as nano spec doesn't support that.
-    printf("\nLoading image, version %" PRIu16 ".%" PRIu16 ".%" PRIu16 " (build: %" PRIu32 ")\n",
-           hdr->ih_ver.iv_major, hdr->ih_ver.iv_minor, hdr->ih_ver.iv_revision, hdr->ih_ver.iv_build_num);
-    printf("  image size: %" PRIu32 ".\n", hdr->ih_img_size);
-}
-
-void jump_to_image(struct arm_vector_table *vt) {
-    // set vector table to application side
-    SCB->VTOR = (uint32_t)vt;
-
-    // reset MSPLIM, set MSP from app vector table and jump to app
-    __asm(
-        "MOV  R0, #0                \n\t"
-        "MSR  MSPLIM, R0            \n\t"
-        "MSR  MSP, %[stack_pointer] \n\t"
-        "BX   %[reset_handler]          "
-        :
-        : [stack_pointer] "r"(vt->msp), [reset_handler] "r"(vt->reset)
-    );
-}
-
-
 int main(void)
 {
     hw_init();
@@ -424,12 +280,26 @@ int main(void)
     MHU_driver_initialize(&mhu_driver_in, &mhu_driver_out);
 
 #if HE_UPDATES_BOTH
-    configure_irq(MHU_RTSS_S_RX_IRQ_IRQn, IRQ_PRIORITY);
-    configure_irq(MHU_RTSS_S_TX_IRQ_IRQn, IRQ_PRIORITY);    
+    NVIC_DisableIRQ(MHU_RTSS_S_RX_IRQ_IRQn);
+    NVIC_ClearPendingIRQ(MHU_RTSS_S_RX_IRQ_IRQn);
+    NVIC_SetPriority(MHU_RTSS_S_RX_IRQ_IRQn, 10);
+    NVIC_EnableIRQ(MHU_RTSS_S_RX_IRQ_IRQn);
+
+    NVIC_DisableIRQ(MHU_RTSS_S_TX_IRQ_IRQn);
+    NVIC_ClearPendingIRQ(MHU_RTSS_S_TX_IRQ_IRQn);
+    NVIC_SetPriority(MHU_RTSS_S_TX_IRQ_IRQn, 10);
+    NVIC_EnableIRQ(MHU_RTSS_S_TX_IRQ_IRQn);
 #endif
 
-    configure_irq(MHU_SESS_S_RX_IRQ_IRQn, IRQ_PRIORITY);
-    configure_irq(MHU_SESS_S_TX_IRQ_IRQn, IRQ_PRIORITY);    
+    NVIC_DisableIRQ(MHU_SESS_S_RX_IRQ_IRQn);
+    NVIC_ClearPendingIRQ(MHU_SESS_S_RX_IRQ_IRQn);
+    NVIC_SetPriority(MHU_SESS_S_RX_IRQ_IRQn, 10);
+    NVIC_EnableIRQ(MHU_SESS_S_RX_IRQ_IRQn);
+
+    NVIC_DisableIRQ(MHU_SESS_S_TX_IRQ_IRQn);
+    NVIC_ClearPendingIRQ(MHU_SESS_S_TX_IRQ_IRQn);
+    NVIC_SetPriority(MHU_SESS_S_TX_IRQ_IRQn, 10);
+    NVIC_EnableIRQ(MHU_SESS_S_TX_IRQ_IRQn);
 
     services_init_params.fn_send_mhu_message = mhu_driver_out.send_message;
 
@@ -442,64 +312,8 @@ int main(void)
         while(1) __WFE();
     }
 
-    // prepare OSPI images
-    ospi_reset();
-
-    if(ospi_flash_init() == -1) {
-        handle_error("OSPI flash init failed", -1);
-    }
-    
-    // add OSPI images to the flash map structure
-    init_ospi_flash_areas();
-    for(size_t i = 0; i < MAX_OSPI_IMAGES; i++) {
-        flash_area_add_ospi_to_flash_map(&ospi_flash_areas[i]);
-    }
-
-    size_t metadata_offset = update_ospi_flash_areas();
-    
-    printf("Bootloader M55-HE start...\n");
-    
-    int ret, idx = 0, image_id = FLASH_AREA_IMAGE_START_ID_OSPI;
-    int available_images = 0;
-    struct boot_rsp rsp;
-    uint8_t update_available = 0;
-    
-    ret = read_single_image_state(FLASH_AREA_IMAGE_0_PRIMARY, NULL, &versions[idx++]);
-    if (ret) {
-        printf("PRIMARY image error!\n");
-    }
-
-    while(1){
-        ret = read_single_image_state(image_id++, &update_available, &versions[idx]);
-        if (ret != 0) {
-            break;
-        }
-        idx++;
-    }
-    
-    available_images = idx;
-
-    int slot_nums = get_metadata(metadata_offset, metadata, available_images);
-    if (slot_nums < 0) {
-        set_metadata_to_default(metadata, available_images);
-    }
-
-    uint8_t choice = display_menu_and_get_choice(metadata, versions, available_images);
-    printf("Selected slot: %d\n", choice);
-
-    if (choice == 0) {
-        printf("Booting Primary Slot\n");
-    } else if (choice < available_images) {
-        printf("Booting OSPI Slot %d\n", choice);
-        ret = context_boot_go_ospi(&rsp, FLASH_AREA_IMAGE_0_PRIMARY, versions[choice].ih_ver.iv_build_num);
-        if (ret < 0) {
-            handle_error("Invalid image selection", ret);
-        } 
-    } else {
-        handle_error("Invalid image selection", -1);
-    }
-
     struct arm_vector_table *vt;
+    struct boot_rsp rsp;
 
 #if HE_UPDATES_BOTH
     // this core is the single updater so run update for all images
@@ -508,9 +322,6 @@ int main(void)
     // both cores handle themselves
     int rv = boot_go_for_image_id(&rsp, 0);
 #endif
-
-    uint32_t strt_addr = rsp.br_hdr->ih_load_addr;
-    strt_addr = 0;
 
     if (rv == 0)
     {
@@ -523,9 +334,9 @@ int main(void)
         hwsem->Unlock();
 #endif
         /* Jump to the starting point of the image */
-        if (strt_addr) {
+        if (rsp.br_hdr->ih_load_addr) {
             // RAM LOAD build
-            vt = (struct arm_vector_table *)(strt_addr + rsp.br_hdr->ih_hdr_size);
+            vt = (struct arm_vector_table *)(rsp.br_hdr->ih_load_addr + rsp.br_hdr->ih_hdr_size);
         }
         else {
             // XIP from slot
@@ -533,28 +344,31 @@ int main(void)
         }
         
         if ((uint32_t)vt & 0x7FF) {
-            handle_error("Vector table alignment not correct", (uint32_t)vt);
+            printf("\n ERROR: vector table alignment not correct (0x%" PRIx32 ")\n", (uint32_t)vt);
         }
         else {
-            print_image_version(rsp.br_hdr);
-
-            // OSPI deinitialization
-            rv = ospi_flash_deinit();
-            if (rv != 0) {
-                printf("Failed to deinitialize OSPI flash.\n");
-                handle_error("Boot process failed", rv);
-            }
-
+            // Don't use PRIu8 for printing as nano spec doesn't support that.
+            printf("\nLoading image, version %" PRIu16 ".%" PRIu16 ".%" PRIu16 " (build: %" PRIu32 ")\n", rsp.br_hdr->ih_ver.iv_major, rsp.br_hdr->ih_ver.iv_minor, rsp.br_hdr->ih_ver.iv_revision, rsp.br_hdr->ih_ver.iv_build_num);
+            printf("  image size: %" PRIu32 ".\n", rsp.br_hdr->ih_img_size);
+            printf("\n");
             uninit();
-            
-            jump_to_image(vt);
+
+            // set vector table to application side
+            SCB->VTOR = (uint32_t)vt;
+
+            // reset MSPLIM, set MSP from app vector table and jump to app
+            __asm(
+                "MOV  R0, #0                \n\t"
+                "MSR  MSPLIM, R0            \n\t"
+                "MSR  MSP, %[stack_pointer] \n\t"
+                "BX   %[reset_handler]          " : : [stack_pointer] "r"(vt->msp), [reset_handler] "r"(vt->reset)
+            );
         }
     }
     else
     {
-        handle_error("Boot process failed", rv);
+        printf("\n ERROR: %d \n" , rv);
     }
-
     while(1) __WFE();
 }
 

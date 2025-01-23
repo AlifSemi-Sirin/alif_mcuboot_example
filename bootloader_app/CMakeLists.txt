@@ -24,9 +24,6 @@ set_target_properties(${BL_APP_TARGET_HE}
 target_sources(${BL_APP_TARGET_HE} PRIVATE
     src/main_he.c
     src/uart_empty_fix.c
-    src/ospi_bootloader.c
-    src/menu.c
-    src/metadata.c
     ${MCUBOOT_DIR}/boot/alif/keys.c
 )
 
@@ -61,7 +58,6 @@ set_target_properties(${BL_APP_TARGET_HP}
 target_sources(${BL_APP_TARGET_HP} PRIVATE
     src/main_hp.c
     src/uart_empty_fix.c
-    src/ospi_bootloader.c
     ${MCUBOOT_DIR}/boot/alif/keys.c
 )
 
