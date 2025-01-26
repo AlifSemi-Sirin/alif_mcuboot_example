@@ -86,7 +86,7 @@ uint8_t display_menu_and_get_choice(const struct metadata_slot *slots, const str
 
     printf("\n==== Bootloader Menu ====\n");
     for (size_t i = 0; i < slot_count; i++) {
-            printf("%d. %s Image: v%d.%d.%d, size %d, slot_id %d, File: %s, Comment: %s\n", 
+            printf("%d. %s Image: v%d.%d.%d, \tsize %d, \tslot_id %d, \tFile: %s, \tComment: %s\n", 
                 i, 
                 i == 0 ? "Start Primary" : "Copy Secondary",
                (int)hdr[i].ih_ver.iv_major, 

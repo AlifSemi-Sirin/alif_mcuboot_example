@@ -14,8 +14,19 @@
 #ifndef OSPI_BOOTLOADER_INIT_H
 #define OSPI_BOOTLOADER_INIT_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+#include <stdint.h>
+
 // Function declarations
 void dump_data(const char *msg, const uint8_t *data, uint32_t len);
 int ospi_flash_init(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // OSPI_BOOTLOADER_INIT_H

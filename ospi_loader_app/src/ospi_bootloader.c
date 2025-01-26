@@ -12,7 +12,7 @@
  * Entrypoint for the MCUBoot bootloader.
  * */
 
-#include "mcuboot_customize/flash_map_mram.h"
+// #include "mcuboot_customize/flash_map_mram.h"
 #include "Driver_Flash.h"
 #include "RTE_Components.h"
 #include CMSIS_device_header
@@ -34,6 +34,8 @@ static uint8_t rx_buffer[PAGE_SIZE];            // Buffer for a single page
 static uint8_t tx_buffer[PAGE_SIZE];            
 static uint32_t page_start_addr = 0xFFFFFFFF; // Start address of cached page
 static uint32_t page_valid_size = 0;          // Valid data size in the page
+
+void flash_area_init_ospi_driver(void* initFunc, void* readFunc, void* writeFunc, void* eraseFunc);
 
 
 void dump_data(const char *msg, const uint8_t *data, uint32_t len)
@@ -318,12 +320,9 @@ int ospi_flash_init(void)
     pinconf_set(PORT_5, PIN_6, PINMUX_ALTERNATE_FUNCTION_1, PADCTRL_OUTPUT_DRIVE_STRENGTH_12MA | PADCTRL_SLEW_RATE_FAST | PADCTRL_READ_ENABLE); // RXDS
     pinconf_set(PORT_LP, PIN_7, PINMUX_ALTERNATE_FUNCTION_0, 0);   
     
-    OSPI_Driver.Init = ospi_drv_init;                       
-    OSPI_Driver.ReadData = ospi_read_data;
-    OSPI_Driver.WriteData = ospi_write_data;
-
+    
     printf("OSPI Init\n");
-    OSPI_Driver.Init();
+    flash_area_init_ospi_driver(ospi_drv_init, ospi_read_data, ospi_write_data, NULL);
 
     return 0;
 }

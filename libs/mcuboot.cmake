@@ -33,7 +33,7 @@ target_sources(${bootutil_lib_name}
         ${MCUBOOT_DIR}/boot/bootutil/src/swap_move.c
         ${MCUBOOT_DIR}/boot/bootutil/src/swap_scratch.c
         ${MCUBOOT_DIR}/boot/bootutil/src/tlv.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/bootloader_app/src/mcuboot_customize/flash_map_mram.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_customize/flash_map_mram.c
 )
 
 target_link_libraries(${bootutil_lib_name}
@@ -43,11 +43,7 @@ target_link_libraries(${bootutil_lib_name}
 
 target_compile_options(${bootutil_lib_name}
     PRIVATE
-        # -Og                # debugging
-        # -g                 # debugging
-        -fstack-protector-strong 
-        # -DDEBUG            # debugging
-        -Wno-error=format  
+        -Wno-error=format
 )
 
 endmacro()
@@ -59,6 +55,7 @@ target_include_directories(${LIB_BOOTUTIL_HE} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_config/he
     ${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_config
     ${MCUBOOT_DIR}/boot/alif/include
+    ${PROJECT_SOURCE_DIR}/mcuboot_customize
 )
 
 target_compile_definitions(${LIB_BOOTUTIL_HE} PUBLIC
@@ -69,6 +66,7 @@ target_include_directories(${LIB_BOOTUTIL_HP} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_config/hp
     ${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_config
     ${MCUBOOT_DIR}/boot/alif/include
+    ${PROJECT_SOURCE_DIR}/mcuboot_customize
 )
 
 target_compile_definitions(${LIB_BOOTUTIL_HP} PUBLIC

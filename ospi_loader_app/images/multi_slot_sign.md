@@ -55,8 +55,31 @@ python multi_slot_signing.py firmware1.bin firmware2.bin \
 ```
 or
 ```bash
-python3 multi_slot_sign.py ~/Alif/alif_usb-to-ospi-flasher/out/flasher/HE/debug/flasher.bin ethos-u-alif_kws.bin ethos-u-alif_obj_detection.bin ethos-u-alif_obj_detection.bin  --versions 1.5.1 1.5.2 1.5.3 1.5.4 --comments "Bootloader application" "Application 1" "Application 2" "aaa"  --merged_output ccc_merged.bin
+python3 multi_slot_sign.py \
+\
+~/Alif/alif_usb-to-ospi-flasher/out/flasher/HE/debug/flasher.bin \
+ethos-u-alif_kws.bin \
+ethos-u-alif_obj_detection.bin \
+ethos-u-alif_obj_detection.bin  \
+ethos-u-alif_kws.bin \
+\
+--versions \
+1.5.1 \
+1.5.2 \
+1.5.3 \
+1.5.4 \
+2.2.2 \
+\
+--comments \
+"Bootloader application" \
+"Application 1" \
+"Application 2" \
+"aaa" \
+"Test application example" \
+\
+--merged_output image_merged.bin
 ```
+
 ### Including Comments
 Add specific comments for each firmware:
 ```bash

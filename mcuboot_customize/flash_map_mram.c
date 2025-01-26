@@ -483,3 +483,21 @@ int flash_area_add_ospi_to_flash_map(struct flash_area *new_area)
 
     return -1;
 }
+
+
+void flash_area_init_ospi_driver(void* initFunc, void* readFunc, void* writeFunc, void* eraseFunc)
+{
+    if (OSPI_Driver.Init == NULL) 
+            OSPI_Driver.Init = (OspiInit_t) initFunc;
+
+    if (OSPI_Driver.ReadData == NULL)
+            OSPI_Driver.ReadData = (OspiReadData_t) readFunc;
+
+    if (OSPI_Driver.WriteData == NULL)
+            OSPI_Driver.WriteData = (OspiWriteData_t) writeFunc;
+
+    if (OSPI_Driver.EraseData == NULL)
+            OSPI_Driver.EraseData = (OspiEraseData_t) eraseFunc;
+
+    OSPI_Driver.Init();
+}
