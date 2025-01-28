@@ -14,7 +14,7 @@
 
 #include <bootutil/bootutil.h>
 #include "bootutil/bootutil_log.h"
-#include "sysflash/sysflash.h"
+#include "ospi_sysflash.h"
 #include "uart_tracelib.h"
 #include "fault_handler.h"
 #include "pinconf.h"
@@ -373,6 +373,7 @@ size_t update_ospi_flash_areas(void)
         ret = read_single_image_state(FLASH_AREA_IMAGE_START_ID_OSPI + i, &update_available, &image_info);
 
         if (ret != 0) {
+            printf("Found %d valid images\n", i);
             break;
         }
 

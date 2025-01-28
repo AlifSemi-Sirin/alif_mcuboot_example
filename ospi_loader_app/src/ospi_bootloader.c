@@ -12,7 +12,6 @@
  * Entrypoint for the MCUBoot bootloader.
  * */
 
-// #include "mcuboot_customize/flash_map_mram.h"
 #include "Driver_Flash.h"
 #include "RTE_Components.h"
 #include CMSIS_device_header

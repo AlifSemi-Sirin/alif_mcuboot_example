@@ -3,7 +3,7 @@
 #include <ctype.h>
 #include <stdlib.h>
 #include <bootutil/bootutil.h>
-#include "sysflash/sysflash.h"
+#include "ospi_sysflash.h"
 #include "metadata.h"
 
 #define MAX_METADATA_SIZE 4096 

@@ -3344,7 +3344,7 @@ boot_go(struct boot_rsp *rsp)
     FIH_RET(fih_rc);
 }
 
-///*
+
 static int simple_image_copy(const struct flash_area *primary_area, const struct flash_area *secondary_area, uint8_t *buffer, size_t buff_size) {
     size_t bytes_written = 0;
     size_t total_size = secondary_area->fa_size;
@@ -3482,7 +3482,6 @@ cleanup:
     return fih_rc;
 }
 
-//*/
 
 /**
  * Prepares the booting process, considering only a single image. This function

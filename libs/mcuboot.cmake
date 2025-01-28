@@ -33,7 +33,8 @@ target_sources(${bootutil_lib_name}
         ${MCUBOOT_DIR}/boot/bootutil/src/swap_move.c
         ${MCUBOOT_DIR}/boot/bootutil/src/swap_scratch.c
         ${MCUBOOT_DIR}/boot/bootutil/src/tlv.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_customize/flash_map_mram.c
+        # ${CMAKE_CURRENT_SOURCE_DIR}/mcuboot_customize/flash_map_mram.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ospi_loader_app/mcuboot_customize/flash_map_mram.c
 )
 
 target_link_libraries(${bootutil_lib_name}
