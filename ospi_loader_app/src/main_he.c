@@ -14,7 +14,7 @@
 
 #include <bootutil/bootutil.h>
 #include "bootutil/bootutil_log.h"
-#include "ospi_sysflash.h"
+#include <sysflash/sysflash.h>
 #include "uart_tracelib.h"
 #include "fault_handler.h"
 #include "pinconf.h"
@@ -167,6 +167,7 @@ struct arm_vector_table {
 };
 
 extern void clk_init(void);
+extern void clk_uninit(void);
 extern void flush_uart(void);
 extern int ospi_flash_init(void);
 extern int ospi_flash_deinit(void);
@@ -546,7 +547,8 @@ int main(void)
                 handle_error("Boot process failed", rv);
             }
 
-            uninit();
+            clk_uninit();
+            hw_uninit();            
             
             jump_to_image(vt);
         }
